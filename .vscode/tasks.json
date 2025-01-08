@@ -1,0 +1,44 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "go",
+			"label": "go: build workspace",
+			"command": "build",
+			"options": {
+				"env": {				
+					"CGO_ENABLED": "0"
+				},
+				"cwd": "${workspaceFolder}/bin",
+			},
+			"args": [
+				"../..."
+			],
+			"problemMatcher": [
+				"$go"
+			],
+			"group": "build",
+			
+		},
+		{
+			"type": "go",
+			"label": "go: test workspace",
+			"command": "test",
+			
+			"options": {
+				"env": {				
+					"CGO_ENABLED": "0"
+				},
+				"cwd": "${workspaceFolder}/bin",
+			},
+			"args": [
+				"../..."
+			],
+			"problemMatcher": [
+				"$go"
+			],
+			"group": "build",
+			
+		},
+	]
+}
