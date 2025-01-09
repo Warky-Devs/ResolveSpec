@@ -33,6 +33,7 @@ type PreloadOption struct {
 	Filters     []FilterOption `json:"filters"`
 	Limit       *int           `json:"limit"`
 	Offset      *int           `json:"offset"`
+	Updatable   *bool          `json:"updateable"` // if true, the relation can be updated
 }
 
 type FilterOption struct {
