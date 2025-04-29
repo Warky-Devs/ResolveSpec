@@ -3,6 +3,7 @@ package resolvespec
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
@@ -25,10 +26,24 @@ func NewAPIHandler(db *gorm.DB) *APIHandler {
 // Main handler method
 func (h *APIHandler) Handle(w http.ResponseWriter, r *http.Request, params map[string]string) {
 	var req RequestBody
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logger.Error("Failed to decode request body: %v", err)
-		h.sendError(w, http.StatusBadRequest, "invalid_request", "Invalid request body", err)
+
+	if r.Body == nil {
+		logger.Error("No body to decode")
+		h.sendError(w, http.StatusBadRequest, "invalid_request", "No body to decode", nil)
 		return
+	} else {
+		defer r.Body.Close()
+	}
+	if bodyContents, err := io.ReadAll(r.Body); err != nil {
+		logger.Error("Failed to decode read body: %v", err)
+		h.sendError(w, http.StatusBadRequest, "read_request", "Invalid request body", err)
+		return
+	} else {
+		if err := json.Unmarshal(bodyContents, &req); err != nil {
+			logger.Error("Failed to decode request body: %v", err)
+			h.sendError(w, http.StatusBadRequest, "invalid_request", "Invalid request body", err)
+			return
+		}
 	}
 
 	schema := params["schema"]
