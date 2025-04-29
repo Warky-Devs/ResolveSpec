@@ -68,8 +68,8 @@ func (h *APIHandler) getModelForEntity(schema, name string) (interface{}, error)
 
 func (h *APIHandler) RegisterModel(schema, name string, model interface{}) error {
 	fullname := fmt.Sprintf("%s.%s", schema, name)
-	model, err := models.GetModelByName(fullname)
-	if model != nil && err != nil {
+	oldModel, err := models.GetModelByName(fullname)
+	if oldModel != nil && err != nil {
 		return fmt.Errorf("model %s already exists", fullname)
 	}
 	err = models.RegisterModel(model, fullname)
