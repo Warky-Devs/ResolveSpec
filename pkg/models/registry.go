@@ -16,7 +16,7 @@ var (
 // RegisterModel registers a model type with the registry
 // The model must be a struct or a pointer to a struct
 // e.g RegisterModel(&ModelPublicUser{},"public.user")
-func RegisterModel(model interface{}, name string) {
+func RegisterModel(model interface{}, name string) error {
 	modelRegistryMutex.Lock()
 	defer modelRegistryMutex.Unlock()
 
@@ -28,6 +28,7 @@ func RegisterModel(model interface{}, name string) {
 		name = modelType.Name()
 	}
 	modelRegistry[name] = model
+	return nil
 }
 
 // RegisterFunction register a function with the registry
