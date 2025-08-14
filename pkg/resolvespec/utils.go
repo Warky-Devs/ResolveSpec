@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func handleUpdateResult(w http.ResponseWriter, h *APIHandler, result *gorm.DB, data interface{}) {
+func handleUpdateResult(w http.ResponseWriter, h *LegacyAPIHandler, result *gorm.DB, data interface{}) {
 	if result.Error != nil {
 		logger.Error("Update error: %v", result.Error)
 		h.sendError(w, http.StatusInternalServerError, "update_error", "Error updating record(s)", result.Error)
@@ -32,7 +32,7 @@ func optionalInt(ptr *int) int {
 }
 
 // Helper methods
-func (h *APIHandler) applyFilter(query *gorm.DB, filter FilterOption) *gorm.DB {
+func (h *LegacyAPIHandler) applyFilter(query *gorm.DB, filter FilterOption) *gorm.DB {
 	switch filter.Operator {
 	case "eq":
 		return query.Where(fmt.Sprintf("%s = ?", filter.Column), filter.Value)
@@ -57,7 +57,7 @@ func (h *APIHandler) applyFilter(query *gorm.DB, filter FilterOption) *gorm.DB {
 	}
 }
 
-func (h *APIHandler) getModelForEntity(schema, name string) (interface{}, error) {
+func (h *LegacyAPIHandler) getModelForEntity(schema, name string) (interface{}, error) {
 	model, err := models.GetModelByName(fmt.Sprintf("%s.%s", schema, name))
 
 	if err != nil {
@@ -66,7 +66,7 @@ func (h *APIHandler) getModelForEntity(schema, name string) (interface{}, error)
 	return model, err
 }
 
-func (h *APIHandler) RegisterModel(schema, name string, model interface{}) error {
+func (h *LegacyAPIHandler) RegisterModel(schema, name string, model interface{}) error {
 	fullname := fmt.Sprintf("%s.%s", schema, name)
 	oldModel, err := models.GetModelByName(fullname)
 	if oldModel != nil && err != nil {

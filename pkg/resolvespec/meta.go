@@ -8,7 +8,7 @@ import (
 	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
 )
 
-func (h *APIHandler) HandleGet(w http.ResponseWriter, r *http.Request, params map[string]string) {
+func (h *LegacyAPIHandler) HandleGet(w http.ResponseWriter, r *http.Request, params map[string]string) {
 	schema := params["schema"]
 	entity := params["entity"]
 

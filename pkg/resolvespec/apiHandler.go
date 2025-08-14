@@ -12,19 +12,19 @@ import (
 
 type HandlerFunc func(http.ResponseWriter, *http.Request)
 
-type APIHandler struct {
+type LegacyAPIHandler struct {
 	db *gorm.DB
 }
 
-// NewAPIHandler creates a new API handler instance
-func NewAPIHandler(db *gorm.DB) *APIHandler {
-	return &APIHandler{
+// NewLegacyAPIHandler creates a new legacy API handler instance
+func NewLegacyAPIHandler(db *gorm.DB) *LegacyAPIHandler {
+	return &LegacyAPIHandler{
 		db: db,
 	}
 }
 
 // Main handler method
-func (h *APIHandler) Handle(w http.ResponseWriter, r *http.Request, params map[string]string) {
+func (h *LegacyAPIHandler) Handle(w http.ResponseWriter, r *http.Request, params map[string]string) {
 	var req RequestBody
 
 	if r.Body == nil {
@@ -67,7 +67,7 @@ func (h *APIHandler) Handle(w http.ResponseWriter, r *http.Request, params map[s
 	}
 }
 
-func (h *APIHandler) sendResponse(w http.ResponseWriter, data interface{}, metadata *Metadata) {
+func (h *LegacyAPIHandler) sendResponse(w http.ResponseWriter, data interface{}, metadata *Metadata) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{
 		Success:  true,
@@ -76,7 +76,7 @@ func (h *APIHandler) sendResponse(w http.ResponseWriter, data interface{}, metad
 	})
 }
 
-func (h *APIHandler) sendError(w http.ResponseWriter, status int, code, message string, details interface{}) {
+func (h *LegacyAPIHandler) sendError(w http.ResponseWriter, status int, code, message string, details interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(Response{

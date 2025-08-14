@@ -11,7 +11,7 @@ import (
 )
 
 // Read handler
-func (h *APIHandler) handleRead(w http.ResponseWriter, r *http.Request, schema, entity, id string, options RequestOptions) {
+func (h *LegacyAPIHandler) handleRead(w http.ResponseWriter, r *http.Request, schema, entity, id string, options RequestOptions) {
 	logger.Info("Reading records from %s.%s", schema, entity)
 
 	// Get the model struct for the entity
@@ -128,7 +128,7 @@ func (h *APIHandler) handleRead(w http.ResponseWriter, r *http.Request, schema, 
 }
 
 // Create handler
-func (h *APIHandler) handleCreate(w http.ResponseWriter, r *http.Request, schema, entity string, data any, options RequestOptions) {
+func (h *LegacyAPIHandler) handleCreate(w http.ResponseWriter, r *http.Request, schema, entity string, data any, options RequestOptions) {
 	logger.Info("Creating records for %s.%s", schema, entity)
 	query := h.db.Table(fmt.Sprintf("%s.%s", schema, entity))
 
@@ -171,7 +171,7 @@ func (h *APIHandler) handleCreate(w http.ResponseWriter, r *http.Request, schema
 }
 
 // Update handler
-func (h *APIHandler) handleUpdate(w http.ResponseWriter, r *http.Request, schema, entity string, urlID string, reqID any, data any, options RequestOptions) {
+func (h *LegacyAPIHandler) handleUpdate(w http.ResponseWriter, r *http.Request, schema, entity string, urlID string, reqID any, data any, options RequestOptions) {
 	logger.Info("Updating records for %s.%s", schema, entity)
 	query := h.db.Table(fmt.Sprintf("%s.%s", schema, entity))
 
@@ -223,7 +223,7 @@ func (h *APIHandler) handleUpdate(w http.ResponseWriter, r *http.Request, schema
 }
 
 // Delete handler
-func (h *APIHandler) handleDelete(w http.ResponseWriter, r *http.Request, schema, entity, id string) {
+func (h *LegacyAPIHandler) handleDelete(w http.ResponseWriter, r *http.Request, schema, entity, id string) {
 	logger.Info("Deleting records from %s.%s", schema, entity)
 	query := h.db.Table(fmt.Sprintf("%s.%s", schema, entity))
 
