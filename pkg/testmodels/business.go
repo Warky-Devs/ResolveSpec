@@ -3,7 +3,7 @@ package testmodels
 import (
 	"time"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/models"
+	"github.com/Warky-Devs/ResolveSpec/pkg/modelregistry"
 )
 
 // Department represents a company department
@@ -138,11 +138,24 @@ func (Comment) TableName() string {
 	return "comments"
 }
 
-func RegisterTestModels() {
-	models.RegisterModel(&Department{}, "departments")
-	models.RegisterModel(&Employee{}, "employees")
-	models.RegisterModel(&Project{}, "projects")
-	models.RegisterModel(&ProjectTask{}, "project_tasks")
-	models.RegisterModel(&Document{}, "documents")
-	models.RegisterModel(&Comment{}, "comments")
+// RegisterTestModels registers all test models with the provided registry
+func RegisterTestModels(registry *modelregistry.DefaultModelRegistry) {
+	registry.RegisterModel("departments", &Department{})
+	registry.RegisterModel("employees", &Employee{})
+	registry.RegisterModel("projects", &Project{})
+	registry.RegisterModel("project_tasks", &ProjectTask{})
+	registry.RegisterModel("documents", &Document{})
+	registry.RegisterModel("comments", &Comment{})
+}
+
+// GetTestModels returns a list of all test model instances
+func GetTestModels() []interface{} {
+	return []interface{}{
+		&Department{},
+		&Employee{},
+		&Project{},
+		&ProjectTask{},
+		&Document{},
+		&Comment{},
+	}
 }

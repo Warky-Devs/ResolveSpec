@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
-	"github.com/Warky-Devs/ResolveSpec/pkg/models"
+	"github.com/Warky-Devs/ResolveSpec/pkg/modelregistry"
 	"github.com/Warky-Devs/ResolveSpec/pkg/testmodels"
 
 	"github.com/Warky-Devs/ResolveSpec/pkg/resolvespec"
@@ -24,9 +24,6 @@ func main() {
 	fmt.Println("ResolveSpec test server starting")
 	logger.Init(true)
 
-	// Init Models
-	testmodels.RegisterTestModels()
-
 	// Initialize database
 	db, err := initDB()
 	if err != nil {
@@ -37,24 +34,22 @@ func main() {
 	// Create router
 	r := mux.NewRouter()
 
-	// Initialize API handler
-	handler := resolvespec.NewAPIHandler(db)
+	// Initialize API handler using new API
+	handler := resolvespec.NewHandlerWithGORM(db)
 
-	// Setup routes
-	r.HandleFunc("/{schema}/{entity}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		handler.Handle(w, r, vars)
-	}).Methods("POST")
+	// Create a new registry instance and register models
+	registry := modelregistry.NewModelRegistry()
+	testmodels.RegisterTestModels(registry)
 
-	r.HandleFunc("/{schema}/{entity}/{id}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		handler.Handle(w, r, vars)
-	}).Methods("POST")
+	// Register models with handler
+	models := testmodels.GetTestModels()
+	modelNames := []string{"departments", "employees", "projects", "project_tasks", "documents", "comments"}
+	for i, model := range models {
+		handler.RegisterModel("public", modelNames[i], model)
+	}
 
-	r.HandleFunc("/{schema}/{entity}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		handler.HandleGet(w, r, vars)
-	}).Methods("GET")
+	// Setup routes using new SetupMuxRoutes function
+	resolvespec.SetupMuxRoutes(r, handler)
 
 	// Start server
 	logger.Info("Starting server on :8080")
@@ -83,7 +78,7 @@ func initDB() (*gorm.DB, error) {
 		return nil, err
 	}
 
-	modelList := models.GetModels()
+	modelList := testmodels.GetTestModels()
 
 	// Auto migrate schemas
 	err = db.AutoMigrate(modelList...)

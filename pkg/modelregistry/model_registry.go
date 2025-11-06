@@ -1,4 +1,4 @@
-package resolvespec
+package modelregistry
 
 import (
 	"fmt"
@@ -9,6 +9,11 @@ import (
 type DefaultModelRegistry struct {
 	models map[string]interface{}
 	mutex  sync.RWMutex
+}
+
+// Global default registry instance
+var defaultRegistry = &DefaultModelRegistry{
+	models: make(map[string]interface{}),
 }
 
 // NewModelRegistry creates a new model registry
@@ -59,7 +64,41 @@ func (r *DefaultModelRegistry) GetModelByEntity(schema, entity string) (interfac
 	if model, err := r.GetModel(fullName); err == nil {
 		return model, nil
 	}
-	
+
 	// Fallback to entity name only
 	return r.GetModel(entity)
+}
+
+// Global convenience functions using the default registry
+
+// RegisterModel registers a model with the default global registry
+func RegisterModel(model interface{}, name string) error {
+	return defaultRegistry.RegisterModel(name, model)
+}
+
+// GetModelByName retrieves a model from the default global registry by name
+func GetModelByName(name string) (interface{}, error) {
+	return defaultRegistry.GetModel(name)
+}
+
+// IterateModels iterates over all models in the default global registry
+func IterateModels(fn func(name string, model interface{})) {
+	defaultRegistry.mutex.RLock()
+	defer defaultRegistry.mutex.RUnlock()
+
+	for name, model := range defaultRegistry.models {
+		fn(name, model)
+	}
+}
+
+// GetModels returns a list of all models in the default global registry
+func GetModels() []interface{} {
+	defaultRegistry.mutex.RLock()
+	defer defaultRegistry.mutex.RUnlock()
+
+	models := make([]interface{}, 0, len(defaultRegistry.models))
+	for _, model := range defaultRegistry.models {
+		models = append(models, model)
+	}
+	return models
 }

@@ -1,10 +1,11 @@
-package resolvespec
+package database
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
 
+	"github.com/Warky-Devs/ResolveSpec/pkg/common"
 	"github.com/uptrace/bun"
 )
 
@@ -19,23 +20,23 @@ func NewBunAdapter(db *bun.DB) *BunAdapter {
 	return &BunAdapter{db: db}
 }
 
-func (b *BunAdapter) NewSelect() SelectQuery {
+func (b *BunAdapter) NewSelect() common.SelectQuery {
 	return &BunSelectQuery{query: b.db.NewSelect()}
 }
 
-func (b *BunAdapter) NewInsert() InsertQuery {
+func (b *BunAdapter) NewInsert() common.InsertQuery {
 	return &BunInsertQuery{query: b.db.NewInsert()}
 }
 
-func (b *BunAdapter) NewUpdate() UpdateQuery {
+func (b *BunAdapter) NewUpdate() common.UpdateQuery {
 	return &BunUpdateQuery{query: b.db.NewUpdate()}
 }
 
-func (b *BunAdapter) NewDelete() DeleteQuery {
+func (b *BunAdapter) NewDelete() common.DeleteQuery {
 	return &BunDeleteQuery{query: b.db.NewDelete()}
 }
 
-func (b *BunAdapter) Exec(ctx context.Context, query string, args ...interface{}) (Result, error) {
+func (b *BunAdapter) Exec(ctx context.Context, query string, args ...interface{}) (common.Result, error) {
 	result, err := b.db.ExecContext(ctx, query, args...)
 	return &BunResult{result: result}, err
 }
@@ -44,7 +45,7 @@ func (b *BunAdapter) Query(ctx context.Context, dest interface{}, query string, 
 	return b.db.NewRaw(query, args...).Scan(ctx, dest)
 }
 
-func (b *BunAdapter) BeginTx(ctx context.Context) (Database, error) {
+func (b *BunAdapter) BeginTx(ctx context.Context) (common.Database, error) {
 	tx, err := b.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -60,14 +61,14 @@ func (b *BunAdapter) CommitTx(ctx context.Context) error {
 }
 
 func (b *BunAdapter) RollbackTx(ctx context.Context) error {
-	// For Bun, we need to handle this differently  
+	// For Bun, we need to handle this differently
 	// This is a simplified implementation
 	return nil
 }
 
-func (b *BunAdapter) RunInTransaction(ctx context.Context, fn func(Database) error) error {
+func (b *BunAdapter) RunInTransaction(ctx context.Context, fn func(common.Database) error) error {
 	return b.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
-		// Create adapter with transaction  
+		// Create adapter with transaction
 		adapter := &BunTxAdapter{tx: tx}
 		return fn(adapter)
 	})
@@ -78,62 +79,70 @@ type BunSelectQuery struct {
 	query *bun.SelectQuery
 }
 
-func (b *BunSelectQuery) Model(model interface{}) SelectQuery {
+func (b *BunSelectQuery) Model(model interface{}) common.SelectQuery {
 	b.query = b.query.Model(model)
 	return b
 }
 
-func (b *BunSelectQuery) Table(table string) SelectQuery {
+func (b *BunSelectQuery) Table(table string) common.SelectQuery {
 	b.query = b.query.Table(table)
 	return b
 }
 
-func (b *BunSelectQuery) Column(columns ...string) SelectQuery {
+func (b *BunSelectQuery) Column(columns ...string) common.SelectQuery {
 	b.query = b.query.Column(columns...)
 	return b
 }
 
-func (b *BunSelectQuery) Where(query string, args ...interface{}) SelectQuery {
+func (b *BunSelectQuery) Where(query string, args ...interface{}) common.SelectQuery {
 	b.query = b.query.Where(query, args...)
 	return b
 }
 
-func (b *BunSelectQuery) WhereOr(query string, args ...interface{}) SelectQuery {
+func (b *BunSelectQuery) WhereOr(query string, args ...interface{}) common.SelectQuery {
 	b.query = b.query.WhereOr(query, args...)
 	return b
 }
 
-func (b *BunSelectQuery) Join(query string, args ...interface{}) SelectQuery {
+func (b *BunSelectQuery) Join(query string, args ...interface{}) common.SelectQuery {
 	b.query = b.query.Join(query, args...)
 	return b
 }
 
-func (b *BunSelectQuery) LeftJoin(query string, args ...interface{}) SelectQuery {
+func (b *BunSelectQuery) LeftJoin(query string, args ...interface{}) common.SelectQuery {
 	b.query = b.query.Join("LEFT JOIN " + query, args...)
 	return b
 }
 
-func (b *BunSelectQuery) Order(order string) SelectQuery {
+func (b *BunSelectQuery) Preload(relation string, conditions ...interface{}) common.SelectQuery {
+	// Bun uses Relation() method for preloading
+	// For now, we'll just pass the relation name without conditions
+	// TODO: Implement proper condition handling for Bun
+	b.query = b.query.Relation(relation)
+	return b
+}
+
+func (b *BunSelectQuery) Order(order string) common.SelectQuery {
 	b.query = b.query.Order(order)
 	return b
 }
 
-func (b *BunSelectQuery) Limit(n int) SelectQuery {
+func (b *BunSelectQuery) Limit(n int) common.SelectQuery {
 	b.query = b.query.Limit(n)
 	return b
 }
 
-func (b *BunSelectQuery) Offset(n int) SelectQuery {
+func (b *BunSelectQuery) Offset(n int) common.SelectQuery {
 	b.query = b.query.Offset(n)
 	return b
 }
 
-func (b *BunSelectQuery) Group(group string) SelectQuery {
+func (b *BunSelectQuery) Group(group string) common.SelectQuery {
 	b.query = b.query.Group(group)
 	return b
 }
 
-func (b *BunSelectQuery) Having(having string, args ...interface{}) SelectQuery {
+func (b *BunSelectQuery) Having(having string, args ...interface{}) common.SelectQuery {
 	b.query = b.query.Having(having, args...)
 	return b
 }
@@ -157,17 +166,17 @@ type BunInsertQuery struct {
 	values map[string]interface{}
 }
 
-func (b *BunInsertQuery) Model(model interface{}) InsertQuery {
+func (b *BunInsertQuery) Model(model interface{}) common.InsertQuery {
 	b.query = b.query.Model(model)
 	return b
 }
 
-func (b *BunInsertQuery) Table(table string) InsertQuery {
+func (b *BunInsertQuery) Table(table string) common.InsertQuery {
 	b.query = b.query.Table(table)
 	return b
 }
 
-func (b *BunInsertQuery) Value(column string, value interface{}) InsertQuery {
+func (b *BunInsertQuery) Value(column string, value interface{}) common.InsertQuery {
 	if b.values == nil {
 		b.values = make(map[string]interface{})
 	}
@@ -175,19 +184,19 @@ func (b *BunInsertQuery) Value(column string, value interface{}) InsertQuery {
 	return b
 }
 
-func (b *BunInsertQuery) OnConflict(action string) InsertQuery {
+func (b *BunInsertQuery) OnConflict(action string) common.InsertQuery {
 	b.query = b.query.On(action)
 	return b
 }
 
-func (b *BunInsertQuery) Returning(columns ...string) InsertQuery {
+func (b *BunInsertQuery) Returning(columns ...string) common.InsertQuery {
 	if len(columns) > 0 {
 		b.query = b.query.Returning(columns[0])
 	}
 	return b
 }
 
-func (b *BunInsertQuery) Exec(ctx context.Context) (Result, error) {
+func (b *BunInsertQuery) Exec(ctx context.Context) (common.Result, error) {
 	if b.values != nil {
 		// For Bun, we need to handle this differently
 		for k, v := range b.values {
@@ -203,41 +212,41 @@ type BunUpdateQuery struct {
 	query *bun.UpdateQuery
 }
 
-func (b *BunUpdateQuery) Model(model interface{}) UpdateQuery {
+func (b *BunUpdateQuery) Model(model interface{}) common.UpdateQuery {
 	b.query = b.query.Model(model)
 	return b
 }
 
-func (b *BunUpdateQuery) Table(table string) UpdateQuery {
+func (b *BunUpdateQuery) Table(table string) common.UpdateQuery {
 	b.query = b.query.Table(table)
 	return b
 }
 
-func (b *BunUpdateQuery) Set(column string, value interface{}) UpdateQuery {
+func (b *BunUpdateQuery) Set(column string, value interface{}) common.UpdateQuery {
 	b.query = b.query.Set(column+" = ?", value)
 	return b
 }
 
-func (b *BunUpdateQuery) SetMap(values map[string]interface{}) UpdateQuery {
+func (b *BunUpdateQuery) SetMap(values map[string]interface{}) common.UpdateQuery {
 	for column, value := range values {
 		b.query = b.query.Set(column+" = ?", value)
 	}
 	return b
 }
 
-func (b *BunUpdateQuery) Where(query string, args ...interface{}) UpdateQuery {
+func (b *BunUpdateQuery) Where(query string, args ...interface{}) common.UpdateQuery {
 	b.query = b.query.Where(query, args...)
 	return b
 }
 
-func (b *BunUpdateQuery) Returning(columns ...string) UpdateQuery {
+func (b *BunUpdateQuery) Returning(columns ...string) common.UpdateQuery {
 	if len(columns) > 0 {
 		b.query = b.query.Returning(columns[0])
 	}
 	return b
 }
 
-func (b *BunUpdateQuery) Exec(ctx context.Context) (Result, error) {
+func (b *BunUpdateQuery) Exec(ctx context.Context) (common.Result, error) {
 	result, err := b.query.Exec(ctx)
 	return &BunResult{result: result}, err
 }
@@ -247,22 +256,22 @@ type BunDeleteQuery struct {
 	query *bun.DeleteQuery
 }
 
-func (b *BunDeleteQuery) Model(model interface{}) DeleteQuery {
+func (b *BunDeleteQuery) Model(model interface{}) common.DeleteQuery {
 	b.query = b.query.Model(model)
 	return b
 }
 
-func (b *BunDeleteQuery) Table(table string) DeleteQuery {
+func (b *BunDeleteQuery) Table(table string) common.DeleteQuery {
 	b.query = b.query.Table(table)
 	return b
 }
 
-func (b *BunDeleteQuery) Where(query string, args ...interface{}) DeleteQuery {
+func (b *BunDeleteQuery) Where(query string, args ...interface{}) common.DeleteQuery {
 	b.query = b.query.Where(query, args...)
 	return b
 }
 
-func (b *BunDeleteQuery) Exec(ctx context.Context) (Result, error) {
+func (b *BunDeleteQuery) Exec(ctx context.Context) (common.Result, error) {
 	result, err := b.query.Exec(ctx)
 	return &BunResult{result: result}, err
 }
@@ -292,23 +301,23 @@ type BunTxAdapter struct {
 	tx bun.Tx
 }
 
-func (b *BunTxAdapter) NewSelect() SelectQuery {
+func (b *BunTxAdapter) NewSelect() common.SelectQuery {
 	return &BunSelectQuery{query: b.tx.NewSelect()}
 }
 
-func (b *BunTxAdapter) NewInsert() InsertQuery {
+func (b *BunTxAdapter) NewInsert() common.InsertQuery {
 	return &BunInsertQuery{query: b.tx.NewInsert()}
 }
 
-func (b *BunTxAdapter) NewUpdate() UpdateQuery {
+func (b *BunTxAdapter) NewUpdate() common.UpdateQuery {
 	return &BunUpdateQuery{query: b.tx.NewUpdate()}
 }
 
-func (b *BunTxAdapter) NewDelete() DeleteQuery {
+func (b *BunTxAdapter) NewDelete() common.DeleteQuery {
 	return &BunDeleteQuery{query: b.tx.NewDelete()}
 }
 
-func (b *BunTxAdapter) Exec(ctx context.Context, query string, args ...interface{}) (Result, error) {
+func (b *BunTxAdapter) Exec(ctx context.Context, query string, args ...interface{}) (common.Result, error) {
 	result, err := b.tx.ExecContext(ctx, query, args...)
 	return &BunResult{result: result}, err
 }
@@ -317,7 +326,7 @@ func (b *BunTxAdapter) Query(ctx context.Context, dest interface{}, query string
 	return b.tx.NewRaw(query, args...).Scan(ctx, dest)
 }
 
-func (b *BunTxAdapter) BeginTx(ctx context.Context) (Database, error) {
+func (b *BunTxAdapter) BeginTx(ctx context.Context) (common.Database, error) {
 	return nil, fmt.Errorf("nested transactions not supported")
 }
 
@@ -329,6 +338,6 @@ func (b *BunTxAdapter) RollbackTx(ctx context.Context) error {
 	return b.tx.Rollback()
 }
 
-func (b *BunTxAdapter) RunInTransaction(ctx context.Context, fn func(Database) error) error {
+func (b *BunTxAdapter) RunInTransaction(ctx context.Context, fn func(common.Database) error) error {
 	return fn(b) // Already in transaction
 }

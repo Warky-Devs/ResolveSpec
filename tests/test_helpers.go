@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
-	"github.com/Warky-Devs/ResolveSpec/pkg/models"
+	"github.com/Warky-Devs/ResolveSpec/pkg/modelregistry"
 	"github.com/Warky-Devs/ResolveSpec/pkg/resolvespec"
 	"github.com/Warky-Devs/ResolveSpec/pkg/testmodels"
 	"github.com/glebarez/sqlite"
@@ -104,9 +104,6 @@ func setupTestDB() (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to open database: %v", err)
 	}
 
-	// Init Models
-	testmodels.RegisterTestModels()
-
 	// Auto migrate all test models
 	err = autoMigrateModels(db)
 	if err != nil {
@@ -119,17 +116,24 @@ func setupTestDB() (*gorm.DB, error) {
 // setupTestRouter creates and configures the test router
 func setupTestRouter(db *gorm.DB) http.Handler {
 	r := mux.NewRouter()
-	handler := resolvespec.NewAPIHandler(db)
 
-	r.HandleFunc("/{schema}/{entity}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		handler.Handle(w, r, vars)
-	}).Methods("POST")
+	// Create a new registry instance
+	registry := modelregistry.NewModelRegistry()
 
-	r.HandleFunc("/{schema}/{entity}/{id}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		handler.Handle(w, r, vars)
-	}).Methods("POST")
+	// Register test models with the registry
+	testmodels.RegisterTestModels(registry)
+
+	// Create handler with GORM adapter and the registry
+	handler := resolvespec.NewHandlerWithGORM(db)
+
+	// Register test models with the handler for the "test" schema
+	models := testmodels.GetTestModels()
+	modelNames := []string{"departments", "employees", "projects", "project_tasks", "documents", "comments"}
+	for i, model := range models {
+		handler.RegisterModel("test", modelNames[i], model)
+	}
+
+	resolvespec.SetupMuxRoutes(r, handler)
 
 	return r
 }
@@ -147,6 +151,6 @@ func cleanup() {
 
 // autoMigrateModels performs automigration for all test models
 func autoMigrateModels(db *gorm.DB) error {
-	modelList := models.GetModels()
+	modelList := testmodels.GetTestModels()
 	return db.AutoMigrate(modelList...)
 }

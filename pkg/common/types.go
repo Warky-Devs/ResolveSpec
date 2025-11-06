@@ -1,4 +1,4 @@
-package resolvespec
+package common
 
 type RequestBody struct {
 	Operation string         `json:"operation"`

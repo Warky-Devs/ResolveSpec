@@ -1,10 +1,11 @@
-package resolvespec
+package router
 
 import (
 	"encoding/json"
 	"io"
 	"net/http"
 
+	"github.com/Warky-Devs/ResolveSpec/pkg/common"
 	"github.com/gorilla/mux"
 )
 
@@ -18,7 +19,7 @@ func NewMuxAdapter(router *mux.Router) *MuxAdapter {
 	return &MuxAdapter{router: router}
 }
 
-func (m *MuxAdapter) HandleFunc(pattern string, handler HTTPHandlerFunc) RouteRegistration {
+func (m *MuxAdapter) HandleFunc(pattern string, handler common.HTTPHandlerFunc) common.RouteRegistration {
 	route := &MuxRouteRegistration{
 		router:  m.router,
 		pattern: pattern,
@@ -27,7 +28,7 @@ func (m *MuxAdapter) HandleFunc(pattern string, handler HTTPHandlerFunc) RouteRe
 	return route
 }
 
-func (m *MuxAdapter) ServeHTTP(w ResponseWriter, r Request) {
+func (m *MuxAdapter) ServeHTTP(w common.ResponseWriter, r common.Request) {
 	// This method would be used when we need to serve through our interface
 	// For now, we'll work directly with the underlying router
 	panic("ServeHTTP not implemented - use GetMuxRouter() for direct access")
@@ -37,11 +38,11 @@ func (m *MuxAdapter) ServeHTTP(w ResponseWriter, r Request) {
 type MuxRouteRegistration struct {
 	router  *mux.Router
 	pattern string
-	handler HTTPHandlerFunc
+	handler common.HTTPHandlerFunc
 	route   *mux.Route
 }
 
-func (m *MuxRouteRegistration) Methods(methods ...string) RouteRegistration {
+func (m *MuxRouteRegistration) Methods(methods ...string) common.RouteRegistration {
 	if m.route == nil {
 		m.route = m.router.HandleFunc(m.pattern, func(w http.ResponseWriter, r *http.Request) {
 			reqAdapter := &HTTPRequest{req: r, vars: mux.Vars(r)}
@@ -53,7 +54,7 @@ func (m *MuxRouteRegistration) Methods(methods ...string) RouteRegistration {
 	return m
 }
 
-func (m *MuxRouteRegistration) PathPrefix(prefix string) RouteRegistration {
+func (m *MuxRouteRegistration) PathPrefix(prefix string) common.RouteRegistration {
 	if m.route == nil {
 		m.route = m.router.HandleFunc(m.pattern, func(w http.ResponseWriter, r *http.Request) {
 			reqAdapter := &HTTPRequest{req: r, vars: mux.Vars(r)}
@@ -115,17 +116,26 @@ func (h *HTTPRequest) QueryParam(key string) string {
 	return h.req.URL.Query().Get(key)
 }
 
+func (h *HTTPRequest) AllHeaders() map[string]string {
+	headers := make(map[string]string)
+	for key, values := range h.req.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+	return headers
+}
+
 // HTTPResponseWriter adapts our ResponseWriter interface to standard http.ResponseWriter
 type HTTPResponseWriter struct {
 	resp   http.ResponseWriter
-	w      ResponseWriter
+	w      common.ResponseWriter
 	status int
 }
 
 func NewHTTPResponseWriter(w http.ResponseWriter) *HTTPResponseWriter {
 	return &HTTPResponseWriter{resp: w}
 }
-
 
 func (h *HTTPResponseWriter) SetHeader(key, value string) {
 	h.resp.Header().Set(key, value)
@@ -156,7 +166,7 @@ func NewStandardMuxAdapter() *StandardMuxAdapter {
 	}
 }
 
-// RegisterRoute registers a route that works with the existing APIHandler
+// RegisterRoute registers a route that works with the existing Handler
 func (s *StandardMuxAdapter) RegisterRoute(pattern string, handler func(http.ResponseWriter, *http.Request, map[string]string)) *mux.Route {
 	return s.router.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -167,18 +177,6 @@ func (s *StandardMuxAdapter) RegisterRoute(pattern string, handler func(http.Res
 // GetMuxRouter returns the underlying mux router for direct access
 func (s *StandardMuxAdapter) GetMuxRouter() *mux.Router {
 	return s.router
-}
-
-// GinAdapter for future Gin support
-type GinAdapter struct {
-	// This would be implemented when Gin support is needed
-	// engine *gin.Engine  
-}
-
-// EchoAdapter for future Echo support  
-type EchoAdapter struct {
-	// This would be implemented when Echo support is needed
-	// echo *echo.Echo
 }
 
 // PathParamExtractor extracts path parameters from different router types

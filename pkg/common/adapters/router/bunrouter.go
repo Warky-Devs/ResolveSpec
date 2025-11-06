@@ -1,8 +1,9 @@
-package resolvespec
+package router
 
 import (
 	"net/http"
 
+	"github.com/Warky-Devs/ResolveSpec/pkg/common"
 	"github.com/uptrace/bunrouter"
 )
 
@@ -21,7 +22,7 @@ func NewBunRouterAdapterDefault() *BunRouterAdapter {
 	return &BunRouterAdapter{router: bunrouter.New()}
 }
 
-func (b *BunRouterAdapter) HandleFunc(pattern string, handler HTTPHandlerFunc) RouteRegistration {
+func (b *BunRouterAdapter) HandleFunc(pattern string, handler common.HTTPHandlerFunc) common.RouteRegistration {
 	route := &BunRouterRegistration{
 		router:  b.router,
 		pattern: pattern,
@@ -30,7 +31,7 @@ func (b *BunRouterAdapter) HandleFunc(pattern string, handler HTTPHandlerFunc) R
 	return route
 }
 
-func (b *BunRouterAdapter) ServeHTTP(w ResponseWriter, r Request) {
+func (b *BunRouterAdapter) ServeHTTP(w common.ResponseWriter, r common.Request) {
 	// This method would be used when we need to serve through our interface
 	// For now, we'll work directly with the underlying router
 	panic("ServeHTTP not implemented - use GetBunRouter() for direct access")
@@ -45,16 +46,16 @@ func (b *BunRouterAdapter) GetBunRouter() *bunrouter.Router {
 type BunRouterRegistration struct {
 	router  *bunrouter.Router
 	pattern string
-	handler HTTPHandlerFunc
+	handler common.HTTPHandlerFunc
 }
 
-func (b *BunRouterRegistration) Methods(methods ...string) RouteRegistration {
+func (b *BunRouterRegistration) Methods(methods ...string) common.RouteRegistration {
 	// bunrouter handles methods differently - we'll register for each method
 	for _, method := range methods {
 		b.router.Handle(method, b.pattern, func(w http.ResponseWriter, req bunrouter.Request) error {
-			// Convert bunrouter.Request to our HTTPRequest
+			// Convert bunrouter.Request to our BunRouterRequest
 			reqAdapter := &BunRouterRequest{req: req}
-			respAdapter := NewHTTPResponseWriter(w)
+			respAdapter := &HTTPResponseWriter{resp: w}
 			b.handler(respAdapter, reqAdapter)
 			return nil
 		})
@@ -62,7 +63,7 @@ func (b *BunRouterRegistration) Methods(methods ...string) RouteRegistration {
 	return b
 }
 
-func (b *BunRouterRegistration) PathPrefix(prefix string) RouteRegistration {
+func (b *BunRouterRegistration) PathPrefix(prefix string) common.RouteRegistration {
 	// bunrouter doesn't have PathPrefix like mux, but we can modify the pattern
 	newPattern := prefix + b.pattern
 	b.pattern = newPattern
@@ -73,6 +74,11 @@ func (b *BunRouterRegistration) PathPrefix(prefix string) RouteRegistration {
 type BunRouterRequest struct {
 	req  bunrouter.Request
 	body []byte
+}
+
+// NewBunRouterRequest creates a new BunRouterRequest adapter
+func NewBunRouterRequest(req bunrouter.Request) *BunRouterRequest {
+	return &BunRouterRequest{req: req}
 }
 
 func (b *BunRouterRequest) Method() string {
@@ -91,11 +97,11 @@ func (b *BunRouterRequest) Body() ([]byte, error) {
 	if b.body != nil {
 		return b.body, nil
 	}
-	
+
 	if b.req.Body == nil {
 		return nil, nil
 	}
-	
+
 	// Create HTTPRequest adapter and use its Body() method
 	httpAdapter := NewHTTPRequest(b.req.Request)
 	body, err := httpAdapter.Body()
@@ -114,6 +120,16 @@ func (b *BunRouterRequest) QueryParam(key string) string {
 	return b.req.URL.Query().Get(key)
 }
 
+func (b *BunRouterRequest) AllHeaders() map[string]string {
+	headers := make(map[string]string)
+	for key, values := range b.req.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+	return headers
+}
+
 // StandardBunRouterAdapter creates routes compatible with standard bunrouter handlers
 type StandardBunRouterAdapter struct {
 	*BunRouterAdapter
@@ -125,16 +141,16 @@ func NewStandardBunRouterAdapter() *StandardBunRouterAdapter {
 	}
 }
 
-// RegisterRoute registers a route that works with the existing APIHandler
+// RegisterRoute registers a route that works with the existing Handler
 func (s *StandardBunRouterAdapter) RegisterRoute(method, pattern string, handler func(http.ResponseWriter, *http.Request, map[string]string)) {
 	s.router.Handle(method, pattern, func(w http.ResponseWriter, req bunrouter.Request) error {
 		// Extract path parameters
 		params := make(map[string]string)
-		
+
 		// bunrouter doesn't provide a direct way to get all params
 		// You would typically access them individually with req.Param("name")
 		// For this example, we'll create the map based on the request context
-		
+
 		handler(w, req.Request, params)
 		return nil
 	})
@@ -148,7 +164,7 @@ func (s *StandardBunRouterAdapter) RegisterRouteWithParams(method, pattern strin
 		for _, paramName := range paramNames {
 			params[paramName] = req.Param(paramName)
 		}
-		
+
 		handler(w, req.Request, params)
 		return nil
 	})
@@ -156,63 +172,22 @@ func (s *StandardBunRouterAdapter) RegisterRouteWithParams(method, pattern strin
 
 // BunRouterConfig holds bunrouter-specific configuration
 type BunRouterConfig struct {
-	UseStrictSlash    bool
-	RedirectTrailingSlash bool
+	UseStrictSlash         bool
+	RedirectTrailingSlash  bool
 	HandleMethodNotAllowed bool
-	HandleOPTIONS     bool
-	GlobalOPTIONS     http.Handler
+	HandleOPTIONS          bool
+	GlobalOPTIONS          http.Handler
 	GlobalMethodNotAllowed http.Handler
-	PanicHandler      func(http.ResponseWriter, *http.Request, interface{})
+	PanicHandler           func(http.ResponseWriter, *http.Request, interface{})
 }
 
 // DefaultBunRouterConfig returns default bunrouter configuration
 func DefaultBunRouterConfig() *BunRouterConfig {
 	return &BunRouterConfig{
-		UseStrictSlash:    false,
-		RedirectTrailingSlash: true,
+		UseStrictSlash:         false,
+		RedirectTrailingSlash:  true,
 		HandleMethodNotAllowed: true,
-		HandleOPTIONS:     true,
+		HandleOPTIONS:          true,
 	}
 }
 
-// SetupBunRouterWithResolveSpec sets up bunrouter routes for ResolveSpec
-func SetupBunRouterWithResolveSpec(router *bunrouter.Router, handler *APIHandlerCompat) {
-	// Setup standard ResolveSpec routes with bunrouter
-	router.Handle("POST", "/:schema/:entity", func(w http.ResponseWriter, req bunrouter.Request) error {
-		params := map[string]string{
-			"schema": req.Param("schema"),
-			"entity": req.Param("entity"),
-		}
-		handler.Handle(w, req.Request, params)
-		return nil
-	})
-
-	router.Handle("POST", "/:schema/:entity/:id", func(w http.ResponseWriter, req bunrouter.Request) error {
-		params := map[string]string{
-			"schema": req.Param("schema"),
-			"entity": req.Param("entity"),
-			"id":     req.Param("id"),
-		}
-		handler.Handle(w, req.Request, params)
-		return nil
-	})
-
-	router.Handle("GET", "/:schema/:entity", func(w http.ResponseWriter, req bunrouter.Request) error {
-		params := map[string]string{
-			"schema": req.Param("schema"),
-			"entity": req.Param("entity"),
-		}
-		handler.HandleGet(w, req.Request, params)
-		return nil
-	})
-
-	router.Handle("GET", "/:schema/:entity/:id", func(w http.ResponseWriter, req bunrouter.Request) error {
-		params := map[string]string{
-			"schema": req.Param("schema"),
-			"entity": req.Param("entity"),
-			"id":     req.Param("id"),
-		}
-		handler.HandleGet(w, req.Request, params)
-		return nil
-	})
-}

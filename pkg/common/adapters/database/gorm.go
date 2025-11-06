@@ -1,7 +1,9 @@
-package resolvespec
+package database
 
 import (
 	"context"
+
+	"github.com/Warky-Devs/ResolveSpec/pkg/common"
 	"gorm.io/gorm"
 )
 
@@ -15,23 +17,23 @@ func NewGormAdapter(db *gorm.DB) *GormAdapter {
 	return &GormAdapter{db: db}
 }
 
-func (g *GormAdapter) NewSelect() SelectQuery {
+func (g *GormAdapter) NewSelect() common.SelectQuery {
 	return &GormSelectQuery{db: g.db}
 }
 
-func (g *GormAdapter) NewInsert() InsertQuery {
+func (g *GormAdapter) NewInsert() common.InsertQuery {
 	return &GormInsertQuery{db: g.db}
 }
 
-func (g *GormAdapter) NewUpdate() UpdateQuery {
+func (g *GormAdapter) NewUpdate() common.UpdateQuery {
 	return &GormUpdateQuery{db: g.db}
 }
 
-func (g *GormAdapter) NewDelete() DeleteQuery {
+func (g *GormAdapter) NewDelete() common.DeleteQuery {
 	return &GormDeleteQuery{db: g.db}
 }
 
-func (g *GormAdapter) Exec(ctx context.Context, query string, args ...interface{}) (Result, error) {
+func (g *GormAdapter) Exec(ctx context.Context, query string, args ...interface{}) (common.Result, error) {
 	result := g.db.WithContext(ctx).Exec(query, args...)
 	return &GormResult{result: result}, result.Error
 }
@@ -40,7 +42,7 @@ func (g *GormAdapter) Query(ctx context.Context, dest interface{}, query string,
 	return g.db.WithContext(ctx).Raw(query, args...).Find(dest).Error
 }
 
-func (g *GormAdapter) BeginTx(ctx context.Context) (Database, error) {
+func (g *GormAdapter) BeginTx(ctx context.Context) (common.Database, error) {
 	tx := g.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
@@ -56,7 +58,7 @@ func (g *GormAdapter) RollbackTx(ctx context.Context) error {
 	return g.db.WithContext(ctx).Rollback().Error
 }
 
-func (g *GormAdapter) RunInTransaction(ctx context.Context, fn func(Database) error) error {
+func (g *GormAdapter) RunInTransaction(ctx context.Context, fn func(common.Database) error) error {
 	return g.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		adapter := &GormAdapter{db: tx}
 		return fn(adapter)
@@ -68,62 +70,67 @@ type GormSelectQuery struct {
 	db *gorm.DB
 }
 
-func (g *GormSelectQuery) Model(model interface{}) SelectQuery {
+func (g *GormSelectQuery) Model(model interface{}) common.SelectQuery {
 	g.db = g.db.Model(model)
 	return g
 }
 
-func (g *GormSelectQuery) Table(table string) SelectQuery {
+func (g *GormSelectQuery) Table(table string) common.SelectQuery {
 	g.db = g.db.Table(table)
 	return g
 }
 
-func (g *GormSelectQuery) Column(columns ...string) SelectQuery {
+func (g *GormSelectQuery) Column(columns ...string) common.SelectQuery {
 	g.db = g.db.Select(columns)
 	return g
 }
 
-func (g *GormSelectQuery) Where(query string, args ...interface{}) SelectQuery {
+func (g *GormSelectQuery) Where(query string, args ...interface{}) common.SelectQuery {
 	g.db = g.db.Where(query, args...)
 	return g
 }
 
-func (g *GormSelectQuery) WhereOr(query string, args ...interface{}) SelectQuery {
+func (g *GormSelectQuery) WhereOr(query string, args ...interface{}) common.SelectQuery {
 	g.db = g.db.Or(query, args...)
 	return g
 }
 
-func (g *GormSelectQuery) Join(query string, args ...interface{}) SelectQuery {
+func (g *GormSelectQuery) Join(query string, args ...interface{}) common.SelectQuery {
 	g.db = g.db.Joins(query, args...)
 	return g
 }
 
-func (g *GormSelectQuery) LeftJoin(query string, args ...interface{}) SelectQuery {
+func (g *GormSelectQuery) LeftJoin(query string, args ...interface{}) common.SelectQuery {
 	g.db = g.db.Joins("LEFT JOIN "+query, args...)
 	return g
 }
 
-func (g *GormSelectQuery) Order(order string) SelectQuery {
+func (g *GormSelectQuery) Preload(relation string, conditions ...interface{}) common.SelectQuery {
+	g.db = g.db.Preload(relation, conditions...)
+	return g
+}
+
+func (g *GormSelectQuery) Order(order string) common.SelectQuery {
 	g.db = g.db.Order(order)
 	return g
 }
 
-func (g *GormSelectQuery) Limit(n int) SelectQuery {
+func (g *GormSelectQuery) Limit(n int) common.SelectQuery {
 	g.db = g.db.Limit(n)
 	return g
 }
 
-func (g *GormSelectQuery) Offset(n int) SelectQuery {
+func (g *GormSelectQuery) Offset(n int) common.SelectQuery {
 	g.db = g.db.Offset(n)
 	return g
 }
 
-func (g *GormSelectQuery) Group(group string) SelectQuery {
+func (g *GormSelectQuery) Group(group string) common.SelectQuery {
 	g.db = g.db.Group(group)
 	return g
 }
 
-func (g *GormSelectQuery) Having(having string, args ...interface{}) SelectQuery {
+func (g *GormSelectQuery) Having(having string, args ...interface{}) common.SelectQuery {
 	g.db = g.db.Having(having, args...)
 	return g
 }
@@ -146,23 +153,23 @@ func (g *GormSelectQuery) Exists(ctx context.Context) (bool, error) {
 
 // GormInsertQuery implements InsertQuery for GORM
 type GormInsertQuery struct {
-	db    *gorm.DB
-	model interface{}
+	db     *gorm.DB
+	model  interface{}
 	values map[string]interface{}
 }
 
-func (g *GormInsertQuery) Model(model interface{}) InsertQuery {
+func (g *GormInsertQuery) Model(model interface{}) common.InsertQuery {
 	g.model = model
 	g.db = g.db.Model(model)
 	return g
 }
 
-func (g *GormInsertQuery) Table(table string) InsertQuery {
+func (g *GormInsertQuery) Table(table string) common.InsertQuery {
 	g.db = g.db.Table(table)
 	return g
 }
 
-func (g *GormInsertQuery) Value(column string, value interface{}) InsertQuery {
+func (g *GormInsertQuery) Value(column string, value interface{}) common.InsertQuery {
 	if g.values == nil {
 		g.values = make(map[string]interface{})
 	}
@@ -170,17 +177,17 @@ func (g *GormInsertQuery) Value(column string, value interface{}) InsertQuery {
 	return g
 }
 
-func (g *GormInsertQuery) OnConflict(action string) InsertQuery {
+func (g *GormInsertQuery) OnConflict(action string) common.InsertQuery {
 	// GORM handles conflicts differently, this would need specific implementation
 	return g
 }
 
-func (g *GormInsertQuery) Returning(columns ...string) InsertQuery {
+func (g *GormInsertQuery) Returning(columns ...string) common.InsertQuery {
 	// GORM doesn't have explicit RETURNING, but updates the model
 	return g
 }
 
-func (g *GormInsertQuery) Exec(ctx context.Context) (Result, error) {
+func (g *GormInsertQuery) Exec(ctx context.Context) (common.Result, error) {
 	var result *gorm.DB
 	if g.model != nil {
 		result = g.db.WithContext(ctx).Create(g.model)
@@ -194,23 +201,23 @@ func (g *GormInsertQuery) Exec(ctx context.Context) (Result, error) {
 
 // GormUpdateQuery implements UpdateQuery for GORM
 type GormUpdateQuery struct {
-	db     *gorm.DB
-	model  interface{}
+	db      *gorm.DB
+	model   interface{}
 	updates interface{}
 }
 
-func (g *GormUpdateQuery) Model(model interface{}) UpdateQuery {
+func (g *GormUpdateQuery) Model(model interface{}) common.UpdateQuery {
 	g.model = model
 	g.db = g.db.Model(model)
 	return g
 }
 
-func (g *GormUpdateQuery) Table(table string) UpdateQuery {
+func (g *GormUpdateQuery) Table(table string) common.UpdateQuery {
 	g.db = g.db.Table(table)
 	return g
 }
 
-func (g *GormUpdateQuery) Set(column string, value interface{}) UpdateQuery {
+func (g *GormUpdateQuery) Set(column string, value interface{}) common.UpdateQuery {
 	if g.updates == nil {
 		g.updates = make(map[string]interface{})
 	}
@@ -220,22 +227,22 @@ func (g *GormUpdateQuery) Set(column string, value interface{}) UpdateQuery {
 	return g
 }
 
-func (g *GormUpdateQuery) SetMap(values map[string]interface{}) UpdateQuery {
+func (g *GormUpdateQuery) SetMap(values map[string]interface{}) common.UpdateQuery {
 	g.updates = values
 	return g
 }
 
-func (g *GormUpdateQuery) Where(query string, args ...interface{}) UpdateQuery {
+func (g *GormUpdateQuery) Where(query string, args ...interface{}) common.UpdateQuery {
 	g.db = g.db.Where(query, args...)
 	return g
 }
 
-func (g *GormUpdateQuery) Returning(columns ...string) UpdateQuery {
+func (g *GormUpdateQuery) Returning(columns ...string) common.UpdateQuery {
 	// GORM doesn't have explicit RETURNING
 	return g
 }
 
-func (g *GormUpdateQuery) Exec(ctx context.Context) (Result, error) {
+func (g *GormUpdateQuery) Exec(ctx context.Context) (common.Result, error) {
 	result := g.db.WithContext(ctx).Updates(g.updates)
 	return &GormResult{result: result}, result.Error
 }
@@ -246,23 +253,23 @@ type GormDeleteQuery struct {
 	model interface{}
 }
 
-func (g *GormDeleteQuery) Model(model interface{}) DeleteQuery {
+func (g *GormDeleteQuery) Model(model interface{}) common.DeleteQuery {
 	g.model = model
 	g.db = g.db.Model(model)
 	return g
 }
 
-func (g *GormDeleteQuery) Table(table string) DeleteQuery {
+func (g *GormDeleteQuery) Table(table string) common.DeleteQuery {
 	g.db = g.db.Table(table)
 	return g
 }
 
-func (g *GormDeleteQuery) Where(query string, args ...interface{}) DeleteQuery {
+func (g *GormDeleteQuery) Where(query string, args ...interface{}) common.DeleteQuery {
 	g.db = g.db.Where(query, args...)
 	return g
 }
 
-func (g *GormDeleteQuery) Exec(ctx context.Context) (Result, error) {
+func (g *GormDeleteQuery) Exec(ctx context.Context) (common.Result, error) {
 	result := g.db.WithContext(ctx).Delete(g.model)
 	return &GormResult{result: result}, result.Error
 }

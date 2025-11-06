@@ -1,4 +1,4 @@
-package resolvespec
+package restheadspec
 
 import (
 	"net/http"
@@ -36,23 +36,26 @@ func NewStandardBunRouter() *router.StandardBunRouterAdapter {
 	return router.NewStandardBunRouterAdapter()
 }
 
-// SetupMuxRoutes sets up routes for the ResolveSpec API with Mux
+// SetupMuxRoutes sets up routes for the RestHeadSpec API with Mux
 func SetupMuxRoutes(muxRouter *mux.Router, handler *Handler) {
+	// GET, POST, PUT, PATCH, DELETE for /{schema}/{entity}
 	muxRouter.HandleFunc("/{schema}/{entity}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		reqAdapter := router.NewHTTPRequest(r)
 		respAdapter := router.NewHTTPResponseWriter(w)
 		handler.Handle(respAdapter, reqAdapter, vars)
-	}).Methods("POST")
+	}).Methods("GET", "POST")
 
+	// GET, PUT, PATCH, DELETE for /{schema}/{entity}/{id}
 	muxRouter.HandleFunc("/{schema}/{entity}/{id}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		reqAdapter := router.NewHTTPRequest(r)
 		respAdapter := router.NewHTTPResponseWriter(w)
 		handler.Handle(respAdapter, reqAdapter, vars)
-	}).Methods("POST")
+	}).Methods("GET", "PUT", "PATCH", "DELETE")
 
-	muxRouter.HandleFunc("/{schema}/{entity}", func(w http.ResponseWriter, r *http.Request) {
+	// GET for metadata (using HandleGet)
+	muxRouter.HandleFunc("/{schema}/{entity}/metadata", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		reqAdapter := router.NewHTTPRequest(r)
 		respAdapter := router.NewHTTPResponseWriter(w)
@@ -62,7 +65,7 @@ func SetupMuxRoutes(muxRouter *mux.Router, handler *Handler) {
 
 // Example usage functions for documentation:
 
-// ExampleWithGORM shows how to use ResolveSpec with GORM
+// ExampleWithGORM shows how to use RestHeadSpec with GORM
 func ExampleWithGORM(db *gorm.DB) {
 	// Create handler using GORM
 	handler := NewHandlerWithGORM(db)
@@ -72,7 +75,7 @@ func ExampleWithGORM(db *gorm.DB) {
 	SetupMuxRoutes(muxRouter, handler)
 
 	// Register models
-	// handler.RegisterModel("public", "users", &User{})
+	// handler.registry.RegisterModel("public.users", &User{})
 }
 
 // ExampleWithBun shows how to switch to Bun ORM
@@ -92,90 +95,109 @@ func ExampleWithBun(bunDB *bun.DB) {
 	SetupMuxRoutes(muxRouter, handler)
 }
 
-// SetupBunRouterRoutes sets up bunrouter routes for the ResolveSpec API
+// SetupBunRouterRoutes sets up bunrouter routes for the RestHeadSpec API
 func SetupBunRouterRoutes(bunRouter *router.StandardBunRouterAdapter, handler *Handler) {
 	r := bunRouter.GetBunRouter()
+
+	// GET and POST for /:schema/:entity
+	r.Handle("GET", "/:schema/:entity", func(w http.ResponseWriter, req bunrouter.Request) error {
+		params := map[string]string{
+			"schema": req.Param("schema"),
+			"entity": req.Param("entity"),
+		}
+		reqAdapter := router.NewBunRouterRequest(req)
+		respAdapter := router.NewHTTPResponseWriter(w)
+		handler.Handle(respAdapter, reqAdapter, params)
+		return nil
+	})
 
 	r.Handle("POST", "/:schema/:entity", func(w http.ResponseWriter, req bunrouter.Request) error {
 		params := map[string]string{
 			"schema": req.Param("schema"),
 			"entity": req.Param("entity"),
 		}
-		reqAdapter := router.NewHTTPRequest(req.Request)
+		reqAdapter := router.NewBunRouterRequest(req)
 		respAdapter := router.NewHTTPResponseWriter(w)
 		handler.Handle(respAdapter, reqAdapter, params)
 		return nil
 	})
 
-	r.Handle("POST", "/:schema/:entity/:id", func(w http.ResponseWriter, req bunrouter.Request) error {
-		params := map[string]string{
-			"schema": req.Param("schema"),
-			"entity": req.Param("entity"),
-			"id":     req.Param("id"),
-		}
-		reqAdapter := router.NewHTTPRequest(req.Request)
-		respAdapter := router.NewHTTPResponseWriter(w)
-		handler.Handle(respAdapter, reqAdapter, params)
-		return nil
-	})
-
-	r.Handle("GET", "/:schema/:entity", func(w http.ResponseWriter, req bunrouter.Request) error {
-		params := map[string]string{
-			"schema": req.Param("schema"),
-			"entity": req.Param("entity"),
-		}
-		reqAdapter := router.NewHTTPRequest(req.Request)
-		respAdapter := router.NewHTTPResponseWriter(w)
-		handler.HandleGet(respAdapter, reqAdapter, params)
-		return nil
-	})
-
+	// GET, PUT, PATCH, DELETE for /:schema/:entity/:id
 	r.Handle("GET", "/:schema/:entity/:id", func(w http.ResponseWriter, req bunrouter.Request) error {
 		params := map[string]string{
 			"schema": req.Param("schema"),
 			"entity": req.Param("entity"),
 			"id":     req.Param("id"),
 		}
-		reqAdapter := router.NewHTTPRequest(req.Request)
+		reqAdapter := router.NewBunRouterRequest(req)
+		respAdapter := router.NewHTTPResponseWriter(w)
+		handler.Handle(respAdapter, reqAdapter, params)
+		return nil
+	})
+
+	r.Handle("PUT", "/:schema/:entity/:id", func(w http.ResponseWriter, req bunrouter.Request) error {
+		params := map[string]string{
+			"schema": req.Param("schema"),
+			"entity": req.Param("entity"),
+			"id":     req.Param("id"),
+		}
+		reqAdapter := router.NewBunRouterRequest(req)
+		respAdapter := router.NewHTTPResponseWriter(w)
+		handler.Handle(respAdapter, reqAdapter, params)
+		return nil
+	})
+
+	r.Handle("PATCH", "/:schema/:entity/:id", func(w http.ResponseWriter, req bunrouter.Request) error {
+		params := map[string]string{
+			"schema": req.Param("schema"),
+			"entity": req.Param("entity"),
+			"id":     req.Param("id"),
+		}
+		reqAdapter := router.NewBunRouterRequest(req)
+		respAdapter := router.NewHTTPResponseWriter(w)
+		handler.Handle(respAdapter, reqAdapter, params)
+		return nil
+	})
+
+	r.Handle("DELETE", "/:schema/:entity/:id", func(w http.ResponseWriter, req bunrouter.Request) error {
+		params := map[string]string{
+			"schema": req.Param("schema"),
+			"entity": req.Param("entity"),
+			"id":     req.Param("id"),
+		}
+		reqAdapter := router.NewBunRouterRequest(req)
+		respAdapter := router.NewHTTPResponseWriter(w)
+		handler.Handle(respAdapter, reqAdapter, params)
+		return nil
+	})
+
+	// Metadata endpoint
+	r.Handle("GET", "/:schema/:entity/metadata", func(w http.ResponseWriter, req bunrouter.Request) error {
+		params := map[string]string{
+			"schema": req.Param("schema"),
+			"entity": req.Param("entity"),
+		}
+		reqAdapter := router.NewBunRouterRequest(req)
 		respAdapter := router.NewHTTPResponseWriter(w)
 		handler.HandleGet(respAdapter, reqAdapter, params)
 		return nil
 	})
 }
 
-// ExampleWithBunRouter shows how to use bunrouter from uptrace
-func ExampleWithBunRouter(bunDB *bun.DB) {
-	// Create handler with Bun adapter
+// ExampleBunRouterWithBunDB shows usage with both BunRouter and Bun DB
+func ExampleBunRouterWithBunDB(bunDB *bun.DB) {
+	// Create handler
 	handler := NewHandlerWithBun(bunDB)
 
-	// Create bunrouter
-	bunRouter := router.NewStandardBunRouterAdapter()
+	// Create BunRouter adapter
+	routerAdapter := NewStandardBunRouter()
 
-	// Setup ResolveSpec routes with bunrouter
-	SetupBunRouterRoutes(bunRouter, handler)
+	// Setup routes
+	SetupBunRouterRoutes(routerAdapter, handler)
+
+	// Get the underlying router for server setup
+	r := routerAdapter.GetBunRouter()
 
 	// Start server
-	// http.ListenAndServe(":8080", bunRouter.GetBunRouter())
-}
-
-// ExampleBunRouterWithBunDB shows the full uptrace stack (bunrouter + Bun ORM)
-func ExampleBunRouterWithBunDB(bunDB *bun.DB) {
-	// Create Bun database adapter
-	dbAdapter := database.NewBunAdapter(bunDB)
-
-	// Create model registry
-	registry := modelregistry.NewModelRegistry()
-	// registry.RegisterModel("public.users", &User{})
-
-	// Create handler with Bun
-	handler := NewHandler(dbAdapter, registry)
-
-	// Create bunrouter
-	bunRouter := router.NewStandardBunRouterAdapter()
-
-	// Setup ResolveSpec routes
-	SetupBunRouterRoutes(bunRouter, handler)
-
-	// This gives you the full uptrace stack: bunrouter + Bun ORM
-	// http.ListenAndServe(":8080", bunRouter.GetBunRouter())
+	http.ListenAndServe(":8080", r)
 }

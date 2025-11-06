@@ -8,17 +8,18 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/Warky-Devs/ResolveSpec/pkg/common"
 	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
 )
 
 // Handler handles API requests using database and model abstractions
 type Handler struct {
-	db       Database
-	registry ModelRegistry
+	db       common.Database
+	registry common.ModelRegistry
 }
 
 // NewHandler creates a new API handler with database and registry abstractions
-func NewHandler(db Database, registry ModelRegistry) *Handler {
+func NewHandler(db common.Database, registry common.ModelRegistry) *Handler {
 	return &Handler{
 		db:       db,
 		registry: registry,
@@ -26,9 +27,9 @@ func NewHandler(db Database, registry ModelRegistry) *Handler {
 }
 
 // Handle processes API requests through router-agnostic interface
-func (h *Handler) Handle(w ResponseWriter, r Request, params map[string]string) {
+func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[string]string) {
 	ctx := context.Background()
-	
+
 	body, err := r.Body()
 	if err != nil {
 		logger.Error("Failed to read request body: %v", err)
@@ -36,7 +37,7 @@ func (h *Handler) Handle(w ResponseWriter, r Request, params map[string]string) 
 		return
 	}
 
-	var req RequestBody
+	var req common.RequestBody
 	if err := json.Unmarshal(body, &req); err != nil {
 		logger.Error("Failed to decode request body: %v", err)
 		h.sendError(w, http.StatusBadRequest, "invalid_request", "Invalid request body", err)
@@ -65,7 +66,7 @@ func (h *Handler) Handle(w ResponseWriter, r Request, params map[string]string) 
 }
 
 // HandleGet processes GET requests for metadata
-func (h *Handler) HandleGet(w ResponseWriter, r Request, params map[string]string) {
+func (h *Handler) HandleGet(w common.ResponseWriter, r common.Request, params map[string]string) {
 	schema := params["schema"]
 	entity := params["entity"]
 
@@ -82,7 +83,7 @@ func (h *Handler) HandleGet(w ResponseWriter, r Request, params map[string]strin
 	h.sendResponse(w, metadata, nil)
 }
 
-func (h *Handler) handleRead(ctx context.Context, w ResponseWriter, schema, entity, id string, options RequestOptions) {
+func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, schema, entity, id string, options common.RequestOptions) {
 	logger.Info("Reading records from %s.%s", schema, entity)
 
 	model, err := h.registry.GetModelByEntity(schema, entity)
@@ -104,11 +105,9 @@ func (h *Handler) handleRead(ctx context.Context, w ResponseWriter, schema, enti
 		query = query.Column(options.Columns...)
 	}
 
-	// Note: Preloading is not implemented in the new database abstraction yet
-	// This is a limitation of the current interface design
-	// For now, preloading should use the legacy APIHandler
+	// Apply preloading
 	if len(options.Preload) > 0 {
-		logger.Warn("Preloading not yet implemented in new handler - use legacy APIHandler for preload functionality")
+		query = h.applyPreloads(model, query, options.Preload)
 	}
 
 	// Apply filters
@@ -172,18 +171,35 @@ func (h *Handler) handleRead(ctx context.Context, w ResponseWriter, schema, enti
 	}
 
 	logger.Info("Successfully retrieved records")
-	h.sendResponse(w, result, &Metadata{
+
+	limit := 0
+	if options.Limit != nil {
+		limit = *options.Limit
+	}
+	offset := 0
+	if options.Offset != nil {
+		offset = *options.Offset
+	}
+
+	h.sendResponse(w, result, &common.Metadata{
 		Total:    int64(total),
 		Filtered: int64(total),
-		Limit:    optionalInt(options.Limit),
-		Offset:   optionalInt(options.Offset),
+		Limit:    limit,
+		Offset:   offset,
 	})
 }
 
-func (h *Handler) handleCreate(ctx context.Context, w ResponseWriter, schema, entity string, data interface{}, options RequestOptions) {
+func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, schema, entity string, data interface{}, options common.RequestOptions) {
 	logger.Info("Creating records for %s.%s", schema, entity)
 
-	tableName := fmt.Sprintf("%s.%s", schema, entity)
+	// Get the model to determine the actual table name
+	model, err := h.registry.GetModelByEntity(schema, entity)
+	if err != nil {
+		logger.Warn("Model not found, using default table name")
+		model = nil
+	}
+
+	tableName := h.getTableName(schema, entity, model)
 	query := h.db.NewInsert().Table(tableName)
 
 	switch v := data.(type) {
@@ -201,7 +217,7 @@ func (h *Handler) handleCreate(ctx context.Context, w ResponseWriter, schema, en
 		h.sendResponse(w, v, nil)
 
 	case []map[string]interface{}:
-		err := h.db.RunInTransaction(ctx, func(tx Database) error {
+		err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 			for _, item := range v {
 				txQuery := tx.NewInsert().Table(tableName)
 				for key, value := range item {
@@ -224,7 +240,7 @@ func (h *Handler) handleCreate(ctx context.Context, w ResponseWriter, schema, en
 	case []interface{}:
 		// Handle []interface{} type from JSON unmarshaling
 		list := make([]interface{}, 0)
-		err := h.db.RunInTransaction(ctx, func(tx Database) error {
+		err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 			for _, item := range v {
 				if itemMap, ok := item.(map[string]interface{}); ok {
 					txQuery := tx.NewInsert().Table(tableName)
@@ -253,10 +269,18 @@ func (h *Handler) handleCreate(ctx context.Context, w ResponseWriter, schema, en
 	}
 }
 
-func (h *Handler) handleUpdate(ctx context.Context, w ResponseWriter, schema, entity, urlID string, reqID interface{}, data interface{}, options RequestOptions) {
+func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, schema, entity, urlID string, reqID interface{}, data interface{}, options common.RequestOptions) {
 	logger.Info("Updating records for %s.%s", schema, entity)
 
-	tableName := fmt.Sprintf("%s.%s", schema, entity)
+	// Get the model to determine the actual table name
+	model, err := h.registry.GetModelByEntity(schema, entity)
+	if err != nil {
+		logger.Warn("Model not found, using default table name")
+		// Fallback to entity name (without schema for SQLite compatibility)
+		model = nil
+	}
+
+	tableName := h.getTableName(schema, entity, model)
 	query := h.db.NewUpdate().Table(tableName)
 
 	switch updates := data.(type) {
@@ -289,18 +313,18 @@ func (h *Handler) handleUpdate(ctx context.Context, w ResponseWriter, schema, en
 		h.sendError(w, http.StatusInternalServerError, "update_error", "Error updating record(s)", err)
 		return
 	}
-	
+
 	if result.RowsAffected() == 0 {
 		logger.Warn("No records found to update")
 		h.sendError(w, http.StatusNotFound, "not_found", "No records found to update", nil)
 		return
 	}
-	
+
 	logger.Info("Successfully updated %d records", result.RowsAffected())
 	h.sendResponse(w, data, nil)
 }
 
-func (h *Handler) handleDelete(ctx context.Context, w ResponseWriter, schema, entity, id string) {
+func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, schema, entity, id string) {
 	logger.Info("Deleting records from %s.%s", schema, entity)
 
 	if id == "" {
@@ -309,7 +333,14 @@ func (h *Handler) handleDelete(ctx context.Context, w ResponseWriter, schema, en
 		return
 	}
 
-	tableName := fmt.Sprintf("%s.%s", schema, entity)
+	// Get the model to determine the actual table name
+	model, err := h.registry.GetModelByEntity(schema, entity)
+	if err != nil {
+		logger.Warn("Model not found, using default table name")
+		model = nil
+	}
+
+	tableName := h.getTableName(schema, entity, model)
 	query := h.db.NewDelete().Table(tableName).Where("id = ?", id)
 
 	result, err := query.Exec(ctx)
@@ -318,7 +349,7 @@ func (h *Handler) handleDelete(ctx context.Context, w ResponseWriter, schema, en
 		h.sendError(w, http.StatusInternalServerError, "delete_error", "Error deleting record", err)
 		return
 	}
-	
+
 	if result.RowsAffected() == 0 {
 		logger.Warn("No record found to delete with ID: %s", id)
 		h.sendError(w, http.StatusNotFound, "not_found", "Record not found", nil)
@@ -329,7 +360,7 @@ func (h *Handler) handleDelete(ctx context.Context, w ResponseWriter, schema, en
 	h.sendResponse(w, nil, nil)
 }
 
-func (h *Handler) applyFilter(query SelectQuery, filter FilterOption) SelectQuery {
+func (h *Handler) applyFilter(query common.SelectQuery, filter common.FilterOption) common.SelectQuery {
 	switch filter.Operator {
 	case "eq":
 		return query.Where(fmt.Sprintf("%s = ?", filter.Column), filter.Value)
@@ -355,22 +386,22 @@ func (h *Handler) applyFilter(query SelectQuery, filter FilterOption) SelectQuer
 }
 
 func (h *Handler) getTableName(schema, entity string, model interface{}) string {
-	if provider, ok := model.(TableNameProvider); ok {
+	if provider, ok := model.(common.TableNameProvider); ok {
 		return provider.TableName()
 	}
 	return fmt.Sprintf("%s.%s", schema, entity)
 }
 
-func (h *Handler) generateMetadata(schema, entity string, model interface{}) TableMetadata {
+func (h *Handler) generateMetadata(schema, entity string, model interface{}) *common.TableMetadata {
 	modelType := reflect.TypeOf(model)
 	if modelType.Kind() == reflect.Ptr {
 		modelType = modelType.Elem()
 	}
 
-	metadata := TableMetadata{
+	metadata := &common.TableMetadata{
 		Schema:    schema,
 		Table:     entity,
-		Columns:   make([]Column, 0),
+		Columns:   make([]common.Column, 0),
 		Relations: make([]string, 0),
 	}
 
@@ -400,7 +431,7 @@ func (h *Handler) generateMetadata(schema, entity string, model interface{}) Tab
 			continue
 		}
 
-		column := Column{
+		column := common.Column{
 			Name:       jsonName,
 			Type:       getColumnType(field),
 			IsNullable: isNullable(field),
@@ -415,21 +446,21 @@ func (h *Handler) generateMetadata(schema, entity string, model interface{}) Tab
 	return metadata
 }
 
-func (h *Handler) sendResponse(w ResponseWriter, data interface{}, metadata *Metadata) {
+func (h *Handler) sendResponse(w common.ResponseWriter, data interface{}, metadata *common.Metadata) {
 	w.SetHeader("Content-Type", "application/json")
-	w.WriteJSON(Response{
+	w.WriteJSON(common.Response{
 		Success:  true,
 		Data:     data,
 		Metadata: metadata,
 	})
 }
 
-func (h *Handler) sendError(w ResponseWriter, status int, code, message string, details interface{}) {
+func (h *Handler) sendError(w common.ResponseWriter, status int, code, message string, details interface{}) {
 	w.SetHeader("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.WriteJSON(Response{
+	w.WriteJSON(common.Response{
 		Success: false,
-		Error: &APIError{
+		Error: &common.APIError{
 			Code:    code,
 			Message: message,
 			Details: details,
@@ -442,4 +473,142 @@ func (h *Handler) sendError(w ResponseWriter, status int, code, message string, 
 func (h *Handler) RegisterModel(schema, name string, model interface{}) error {
 	fullname := fmt.Sprintf("%s.%s", schema, name)
 	return h.registry.RegisterModel(fullname, model)
+}
+
+// Helper functions
+
+func getColumnType(field reflect.StructField) string {
+	// Check GORM type tag first
+	gormTag := field.Tag.Get("gorm")
+	if strings.Contains(gormTag, "type:") {
+		parts := strings.Split(gormTag, "type:")
+		if len(parts) > 1 {
+			typePart := strings.Split(parts[1], ";")[0]
+			return typePart
+		}
+	}
+
+	// Map Go types to SQL types
+	switch field.Type.Kind() {
+	case reflect.String:
+		return "string"
+	case reflect.Int, reflect.Int32:
+		return "integer"
+	case reflect.Int64:
+		return "bigint"
+	case reflect.Float32:
+		return "float"
+	case reflect.Float64:
+		return "double"
+	case reflect.Bool:
+		return "boolean"
+	default:
+		if field.Type.Name() == "Time" {
+			return "timestamp"
+		}
+		return "unknown"
+	}
+}
+
+func isNullable(field reflect.StructField) bool {
+	// Check if it's a pointer type
+	if field.Type.Kind() == reflect.Ptr {
+		return true
+	}
+
+	// Check if it's a null type from sql package
+	typeName := field.Type.Name()
+	if strings.HasPrefix(typeName, "Null") {
+		return true
+	}
+
+	// Check GORM tags
+	gormTag := field.Tag.Get("gorm")
+	return !strings.Contains(gormTag, "not null")
+}
+
+// Preload support functions
+
+type relationshipInfo struct {
+	fieldName    string
+	jsonName     string
+	relationType string // "belongsTo", "hasMany", "hasOne", "many2many"
+	foreignKey   string
+	references   string
+	joinTable    string
+	relatedModel interface{}
+}
+
+func (h *Handler) applyPreloads(model interface{}, query common.SelectQuery, preloads []common.PreloadOption) common.SelectQuery {
+	modelType := reflect.TypeOf(model)
+	if modelType.Kind() == reflect.Ptr {
+		modelType = modelType.Elem()
+	}
+
+	for _, preload := range preloads {
+		logger.Debug("Processing preload for relation: %s", preload.Relation)
+		relInfo := h.getRelationshipInfo(modelType, preload.Relation)
+		if relInfo == nil {
+			logger.Warn("Relation %s not found in model", preload.Relation)
+			continue
+		}
+
+		// Use the field name (capitalized) for ORM preloading
+		// ORMs like GORM and Bun expect the struct field name, not the JSON name
+		relationFieldName := relInfo.fieldName
+
+		// For now, we'll preload without conditions
+		// TODO: Implement column selection and filtering for preloads
+		// This requires a more sophisticated approach with callbacks or query builders
+		query = query.Preload(relationFieldName)
+		logger.Debug("Applied Preload for relation: %s (field: %s)", preload.Relation, relationFieldName)
+	}
+
+	return query
+}
+
+func (h *Handler) getRelationshipInfo(modelType reflect.Type, relationName string) *relationshipInfo {
+	for i := 0; i < modelType.NumField(); i++ {
+		field := modelType.Field(i)
+		jsonTag := field.Tag.Get("json")
+		jsonName := strings.Split(jsonTag, ",")[0]
+
+		if jsonName == relationName {
+			gormTag := field.Tag.Get("gorm")
+			info := &relationshipInfo{
+				fieldName: field.Name,
+				jsonName:  jsonName,
+			}
+
+			// Parse GORM tag to determine relationship type and keys
+			if strings.Contains(gormTag, "foreignKey") {
+				info.foreignKey = h.extractTagValue(gormTag, "foreignKey")
+				info.references = h.extractTagValue(gormTag, "references")
+
+				// Determine if it's belongsTo or hasMany/hasOne
+				if field.Type.Kind() == reflect.Slice {
+					info.relationType = "hasMany"
+				} else if field.Type.Kind() == reflect.Ptr || field.Type.Kind() == reflect.Struct {
+					info.relationType = "belongsTo"
+				}
+			} else if strings.Contains(gormTag, "many2many") {
+				info.relationType = "many2many"
+				info.joinTable = h.extractTagValue(gormTag, "many2many")
+			}
+
+			return info
+		}
+	}
+	return nil
+}
+
+func (h *Handler) extractTagValue(tag, key string) string {
+	parts := strings.Split(tag, ";")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, key+":") {
+			return strings.TrimPrefix(part, key+":")
+		}
+	}
+	return ""
 }
