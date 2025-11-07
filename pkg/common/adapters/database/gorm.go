@@ -70,7 +70,8 @@ func (g *GormAdapter) RunInTransaction(ctx context.Context, fn func(common.Datab
 // GormSelectQuery implements SelectQuery for GORM
 type GormSelectQuery struct {
 	db         *gorm.DB
-	tableName  string
+	schema     string // Separated schema name
+	tableName  string // Just the table name, without schema
 	tableAlias string
 }
 
@@ -79,7 +80,9 @@ func (g *GormSelectQuery) Model(model interface{}) common.SelectQuery {
 
 	// Try to get table name from model if it implements TableNameProvider
 	if provider, ok := model.(common.TableNameProvider); ok {
-		g.tableName = provider.TableName()
+		fullTableName := provider.TableName()
+		// Check if the table name contains schema (e.g., "schema.table")
+		g.schema, g.tableName = parseTableName(fullTableName)
 	}
 
 	return g
@@ -87,7 +90,8 @@ func (g *GormSelectQuery) Model(model interface{}) common.SelectQuery {
 
 func (g *GormSelectQuery) Table(table string) common.SelectQuery {
 	g.db = g.db.Table(table)
-	g.tableName = table
+	// Check if the table name contains schema (e.g., "schema.table")
+	g.schema, g.tableName = parseTableName(table)
 	return g
 }
 
@@ -120,13 +124,9 @@ func (g *GormSelectQuery) Join(query string, args ...interface{}) common.SelectQ
 		}
 	}
 
-	// If no prefix provided, use the table name as prefix
+	// If no prefix provided, use the table name as prefix (already separated from schema)
 	if prefix == "" && g.tableName != "" {
 		prefix = g.tableName
-		// Extract just the table name if it has schema
-		if idx := strings.LastIndex(prefix, "."); idx != -1 {
-			prefix = prefix[idx+1:]
-		}
 	}
 
 	// If prefix is provided, add it as an alias in the join
@@ -161,12 +161,9 @@ func (g *GormSelectQuery) LeftJoin(query string, args ...interface{}) common.Sel
 		}
 	}
 
-	// If no prefix provided, use the table name as prefix
+	// If no prefix provided, use the table name as prefix (already separated from schema)
 	if prefix == "" && g.tableName != "" {
 		prefix = g.tableName
-		if idx := strings.LastIndex(prefix, "."); idx != -1 {
-			prefix = prefix[idx+1:]
-		}
 	}
 
 	// Construct LEFT JOIN with prefix

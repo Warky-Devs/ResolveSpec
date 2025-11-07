@@ -531,20 +531,65 @@ func (h *Handler) applyFilter(query common.SelectQuery, filter common.FilterOpti
 	}
 }
 
-func (h *Handler) getTableName(schema, entity string, model interface{}) string {
-	// Check if model implements TableNameProvider
-	if provider, ok := model.(common.TableNameProvider); ok {
-		tableName := provider.TableName()
-		if tableName != "" {
-			return tableName
+// parseTableName splits a table name that may contain schema into separate schema and table
+func (h *Handler) parseTableName(fullTableName string) (schema, table string) {
+	if idx := strings.LastIndex(fullTableName, "."); idx != -1 {
+		return fullTableName[:idx], fullTableName[idx+1:]
+	}
+	return "", fullTableName
+}
+
+// getSchemaAndTable returns the schema and table name separately
+// It checks SchemaProvider and TableNameProvider interfaces and handles cases where
+// the table name may already include the schema (e.g., "public.users")
+//
+// Priority order:
+// 1. If TableName() contains a schema (e.g., "myschema.mytable"), that schema takes precedence
+// 2. If model implements SchemaProvider, use that schema
+// 3. Otherwise, use the defaultSchema parameter
+func (h *Handler) getSchemaAndTable(defaultSchema, entity string, model interface{}) (schema, table string) {
+	// First check if model provides a table name
+	// We check this FIRST because the table name might already contain the schema
+	if tableProvider, ok := model.(common.TableNameProvider); ok {
+		tableName := tableProvider.TableName()
+
+		// IMPORTANT: Check if the table name already contains a schema (e.g., "schema.table")
+		// This is common when models need to specify a different schema than the default
+		if tableSchema, tableOnly := h.parseTableName(tableName); tableSchema != "" {
+			// Table name includes schema - use it and ignore any other schema providers
+			logger.Debug("TableName() includes schema: %s.%s", tableSchema, tableOnly)
+			return tableSchema, tableOnly
 		}
+
+		// Table name is just the table name without schema
+		// Now determine which schema to use
+		if schemaProvider, ok := model.(common.SchemaProvider); ok {
+			schema = schemaProvider.SchemaName()
+		} else {
+			schema = defaultSchema
+		}
+
+		return schema, tableName
 	}
 
-	// Default to schema.entity
-	if schema != "" {
-		return fmt.Sprintf("%s.%s", schema, entity)
+	// No TableNameProvider, so check for schema and use entity as table name
+	if schemaProvider, ok := model.(common.SchemaProvider); ok {
+		schema = schemaProvider.SchemaName()
+	} else {
+		schema = defaultSchema
 	}
-	return entity
+
+	// Default to entity name as table
+	return schema, entity
+}
+
+// getTableName returns the full table name including schema (schema.table)
+func (h *Handler) getTableName(schema, entity string, model interface{}) string {
+	schemaName, tableName := h.getSchemaAndTable(schema, entity, model)
+	if schemaName != "" {
+		return fmt.Sprintf("%s.%s", schemaName, tableName)
+	}
+	return tableName
 }
 
 func (h *Handler) generateMetadata(schema, entity string, model interface{}) *common.TableMetadata {
