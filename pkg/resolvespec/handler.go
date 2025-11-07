@@ -100,6 +100,10 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 	// Add request-scoped data to context
 	ctx = WithRequestData(ctx, schema, entity, tableName, model, modelPtr)
 
+	// Validate and filter columns in options (log warnings for invalid columns)
+	validator := common.NewColumnValidator(model)
+	req.Options = validator.FilterRequestOptions(req.Options)
+
 	switch req.Operation {
 	case "read":
 		h.handleRead(ctx, w, id, req.Options)

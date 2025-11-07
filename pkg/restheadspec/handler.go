@@ -93,6 +93,10 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 	// Add request-scoped data to context
 	ctx = WithRequestData(ctx, schema, entity, tableName, model, modelPtr)
 
+	// Validate and filter columns in options (log warnings for invalid columns)
+	validator := common.NewColumnValidator(model)
+	options = filterExtendedOptions(validator, options)
+
 	switch method {
 	case "GET":
 		if id != "" {
@@ -749,4 +753,42 @@ func (h *Handler) sendError(w common.ResponseWriter, statusCode int, code, messa
 	}
 	w.WriteHeader(statusCode)
 	w.WriteJSON(response)
+}
+
+// filterExtendedOptions filters all column references, removing invalid ones and logging warnings
+func filterExtendedOptions(validator *common.ColumnValidator, options ExtendedRequestOptions) ExtendedRequestOptions {
+	filtered := options
+
+	// Filter base RequestOptions
+	filtered.RequestOptions = validator.FilterRequestOptions(options.RequestOptions)
+
+	// Filter SearchColumns
+	filtered.SearchColumns = validator.FilterValidColumns(options.SearchColumns)
+
+	// Filter AdvancedSQL column keys
+	filteredAdvSQL := make(map[string]string)
+	for colName, sqlExpr := range options.AdvancedSQL {
+		if validator.IsValidColumn(colName) {
+			filteredAdvSQL[colName] = sqlExpr
+		} else {
+			logger.Warn("Invalid column in advanced SQL removed: %s", colName)
+		}
+	}
+	filtered.AdvancedSQL = filteredAdvSQL
+
+	// ComputedQL columns are allowed to be any name since they're computed
+	// No filtering needed for ComputedQL keys
+	filtered.ComputedQL = options.ComputedQL
+
+	// Filter Expand columns
+	filteredExpands := make([]ExpandOption, 0, len(options.Expand))
+	for _, expand := range options.Expand {
+		filteredExpand := expand
+		// Don't validate relation name, only columns
+		filteredExpand.Columns = validator.FilterValidColumns(expand.Columns)
+		filteredExpands = append(filteredExpands, filteredExpand)
+	}
+	filtered.Expand = filteredExpands
+
+	return filtered
 }

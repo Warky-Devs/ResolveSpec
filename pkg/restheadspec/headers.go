@@ -57,27 +57,43 @@ type ExpandOption struct {
 // decodeHeaderValue decodes base64 encoded header values
 // Supports ZIP_ and __ prefixes for base64 encoding
 func decodeHeaderValue(value string) string {
-	// Check for ZIP_ prefix
-	if strings.HasPrefix(value, "ZIP_") {
-		decoded, err := base64.StdEncoding.DecodeString(value[4:])
-		if err == nil {
-			return string(decoded)
+	str, _ := DecodeParam(value)
+	return str
+}
+
+// DecodeParam - Decodes parameter string and returns unencoded string
+func DecodeParam(pStr string) (string, error) {
+	var code string = pStr
+	if strings.HasPrefix(pStr, "ZIP_") {
+		code = strings.ReplaceAll(pStr, "ZIP_", "")
+		code = strings.ReplaceAll(code, "\n", "")
+		code = strings.ReplaceAll(code, "\r", "")
+		code = strings.ReplaceAll(code, " ", "")
+		strDat, err := base64.StdEncoding.DecodeString(code)
+		if err != nil {
+			return code, fmt.Errorf("failed to read parameter base64: %v", err)
+		} else {
+			code = string(strDat)
 		}
-		logger.Warn("Failed to decode ZIP_ prefixed value: %v", err)
-		return value
+	} else if strings.HasPrefix(pStr, "__") {
+		code = strings.ReplaceAll(pStr, "__", "")
+		code = strings.ReplaceAll(code, "\n", "")
+		code = strings.ReplaceAll(code, "\r", "")
+		code = strings.ReplaceAll(code, " ", "")
+
+		strDat, err := base64.StdEncoding.DecodeString(code)
+		if err != nil {
+			return code, fmt.Errorf("failed to read parameter base64: %v", err)
+		} else {
+			code = string(strDat)
+		}
 	}
 
-	// Check for __ prefix
-	if strings.HasPrefix(value, "__") {
-		decoded, err := base64.StdEncoding.DecodeString(value[2:])
-		if err == nil {
-			return string(decoded)
-		}
-		logger.Warn("Failed to decode __ prefixed value: %v", err)
-		return value
+	if strings.HasPrefix(code, "ZIP_") || strings.HasPrefix(code, "__") {
+		code, _ = DecodeParam(code)
 	}
 
-	return value
+	return code, nil
 }
 
 // parseOptionsFromHeaders parses all request options from HTTP headers
