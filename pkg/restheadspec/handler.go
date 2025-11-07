@@ -44,14 +44,28 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 
 	logger.Info("Handling %s request for %s.%s", method, schema, entity)
 
+	// Get model and populate context with request-scoped data
+	model, err := h.registry.GetModelByEntity(schema, entity)
+	if err != nil {
+		logger.Error("Invalid entity: %v", err)
+		h.sendError(w, http.StatusBadRequest, "invalid_entity", "Invalid entity", err)
+		return
+	}
+
+	modelPtr := reflect.New(reflect.TypeOf(model)).Interface()
+	tableName := h.getTableName(schema, entity, model)
+
+	// Add request-scoped data to context
+	ctx = WithRequestData(ctx, schema, entity, tableName, model, modelPtr)
+
 	switch method {
 	case "GET":
 		if id != "" {
 			// GET with ID - read single record
-			h.handleRead(ctx, w, schema, entity, id, options)
+			h.handleRead(ctx, w, id, options)
 		} else {
 			// GET without ID - read multiple records
-			h.handleRead(ctx, w, schema, entity, "", options)
+			h.handleRead(ctx, w, "", options)
 		}
 	case "POST":
 		// Create operation
@@ -67,7 +81,7 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 			h.sendError(w, http.StatusBadRequest, "invalid_request", "Invalid request body", err)
 			return
 		}
-		h.handleCreate(ctx, w, schema, entity, data, options)
+		h.handleCreate(ctx, w, data, options)
 	case "PUT", "PATCH":
 		// Update operation
 		body, err := r.Body()
@@ -82,9 +96,9 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 			h.sendError(w, http.StatusBadRequest, "invalid_request", "Invalid request body", err)
 			return
 		}
-		h.handleUpdate(ctx, w, schema, entity, id, nil, data, options)
+		h.handleUpdate(ctx, w, id, nil, data, options)
 	case "DELETE":
-		h.handleDelete(ctx, w, schema, entity, id)
+		h.handleDelete(ctx, w, id)
 	default:
 		logger.Error("Invalid HTTP method: %s", method)
 		h.sendError(w, http.StatusMethodNotAllowed, "invalid_method", "Invalid HTTP method", nil)
@@ -111,20 +125,15 @@ func (h *Handler) HandleGet(w common.ResponseWriter, r common.Request, params ma
 
 // parseOptionsFromHeaders is now implemented in headers.go
 
-func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, schema, entity, id string, options ExtendedRequestOptions) {
+func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id string, options ExtendedRequestOptions) {
+	schema := GetSchema(ctx)
+	entity := GetEntity(ctx)
+	tableName := GetTableName(ctx)
+	modelPtr := GetModelPtr(ctx)
+
 	logger.Info("Reading records from %s.%s", schema, entity)
 
-	model, err := h.registry.GetModelByEntity(schema, entity)
-	if err != nil {
-		logger.Error("Invalid entity: %v", err)
-		h.sendError(w, http.StatusBadRequest, "invalid_entity", "Invalid entity", err)
-		return
-	}
-
-	query := h.db.NewSelect().Model(model)
-
-	// Get table name
-	tableName := h.getTableName(schema, entity, model)
+	query := h.db.NewSelect().Model(modelPtr)
 	query = query.Table(tableName)
 
 	// Apply column selection
@@ -214,8 +223,9 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, schem
 		query = query.Offset(*options.Offset)
 	}
 
-	// Execute query
-	resultSlice := reflect.New(reflect.SliceOf(reflect.TypeOf(model))).Interface()
+	// Execute query - create a slice of pointers to the model type
+	model := GetModel(ctx)
+	resultSlice := reflect.New(reflect.SliceOf(reflect.PointerTo(reflect.TypeOf(model)))).Interface()
 	if err := query.Scan(ctx, resultSlice); err != nil {
 		logger.Error("Error executing query: %v", err)
 		h.sendError(w, http.StatusInternalServerError, "query_error", "Error executing query", err)
@@ -241,17 +251,13 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, schem
 	h.sendFormattedResponse(w, resultSlice, metadata, options)
 }
 
-func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, schema, entity string, data interface{}, options ExtendedRequestOptions) {
+func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, data interface{}, options ExtendedRequestOptions) {
+	schema := GetSchema(ctx)
+	entity := GetEntity(ctx)
+	tableName := GetTableName(ctx)
+	model := GetModel(ctx)
+
 	logger.Info("Creating record in %s.%s", schema, entity)
-
-	model, err := h.registry.GetModelByEntity(schema, entity)
-	if err != nil {
-		logger.Error("Invalid entity: %v", err)
-		h.sendError(w, http.StatusBadRequest, "invalid_entity", "Invalid entity", err)
-		return
-	}
-
-	tableName := h.getTableName(schema, entity, model)
 
 	// Handle batch creation
 	dataValue := reflect.ValueOf(data)
@@ -263,8 +269,8 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, sch
 			for i := 0; i < dataValue.Len(); i++ {
 				item := dataValue.Index(i).Interface()
 
-				// Convert item to model type
-				modelValue := reflect.New(reflect.TypeOf(model).Elem()).Interface()
+				// Convert item to model type - create a pointer to the model
+				modelValue := reflect.New(reflect.TypeOf(model)).Interface()
 				jsonData, err := json.Marshal(item)
 				if err != nil {
 					return fmt.Errorf("failed to marshal item: %w", err)
@@ -291,8 +297,8 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, sch
 		return
 	}
 
-	// Single record creation
-	modelValue := reflect.New(reflect.TypeOf(model).Elem()).Interface()
+	// Single record creation - create a pointer to the model
+	modelValue := reflect.New(reflect.TypeOf(model)).Interface()
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		logger.Error("Error marshaling data: %v", err)
@@ -315,17 +321,12 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, sch
 	h.sendResponse(w, modelValue, nil)
 }
 
-func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, schema, entity, id string, idPtr *int64, data interface{}, options ExtendedRequestOptions) {
+func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id string, idPtr *int64, data interface{}, options ExtendedRequestOptions) {
+	schema := GetSchema(ctx)
+	entity := GetEntity(ctx)
+	tableName := GetTableName(ctx)
+
 	logger.Info("Updating record in %s.%s", schema, entity)
-
-	model, err := h.registry.GetModelByEntity(schema, entity)
-	if err != nil {
-		logger.Error("Invalid entity: %v", err)
-		h.sendError(w, http.StatusBadRequest, "invalid_entity", "Invalid entity", err)
-		return
-	}
-
-	tableName := h.getTableName(schema, entity, model)
 
 	// Convert data to map
 	dataMap, ok := data.(map[string]interface{})
@@ -367,17 +368,12 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, sch
 	}, nil)
 }
 
-func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, schema, entity, id string) {
+func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id string) {
+	schema := GetSchema(ctx)
+	entity := GetEntity(ctx)
+	tableName := GetTableName(ctx)
+
 	logger.Info("Deleting record from %s.%s", schema, entity)
-
-	model, err := h.registry.GetModelByEntity(schema, entity)
-	if err != nil {
-		logger.Error("Invalid entity: %v", err)
-		h.sendError(w, http.StatusBadRequest, "invalid_entity", "Invalid entity", err)
-		return
-	}
-
-	tableName := h.getTableName(schema, entity, model)
 
 	query := h.db.NewDelete().Table(tableName)
 

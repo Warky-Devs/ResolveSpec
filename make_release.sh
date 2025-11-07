@@ -15,12 +15,12 @@ if [[ $make_release =~ ^[Yy]$ ]]; then
     fi
 
     # Create an annotated tag
-    git tag -a "$version" -m "Released Core $version"
+    git tag -a "$version" -m "Released $version"
 
     # Push the tag to the remote repository
     git push origin "$version"
 
-    echo "Tag $version created for Core and pushed to the remote repository."
+    echo "Tag $version created and pushed to the remote repository."
 else
     echo "No release version created."
 fi

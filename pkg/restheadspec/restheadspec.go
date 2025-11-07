@@ -1,3 +1,55 @@
+// Package restheadspec provides the Rest Header Spec API framework.
+//
+// Rest Header Spec (restheadspec) is a RESTful API framework that reads query options,
+// filters, sorting, pagination, and other parameters from HTTP headers instead of
+// request bodies or query parameters. This approach provides a clean separation between
+// data and metadata in API requests.
+//
+// # Key Features
+//
+//   - Header-based API configuration: All query options are passed via HTTP headers
+//   - Database-agnostic: Works with both GORM and Bun ORM through adapters
+//   - Router-agnostic: Supports multiple HTTP routers (Mux, BunRouter, etc.)
+//   - Advanced filtering: Supports complex filter operations (eq, gt, lt, like, between, etc.)
+//   - Pagination and sorting: Built-in support for limit, offset, and multi-column sorting
+//   - Preloading and expansion: Support for eager loading relationships
+//   - Multiple response formats: Default, simple, and Syncfusion formats
+//
+// # HTTP Headers
+//
+// The following headers are supported for configuring API requests:
+//
+//   - X-Filters: JSON array of filter conditions
+//   - X-Columns: Comma-separated list of columns to select
+//   - X-Sort: JSON array of sort specifications
+//   - X-Limit: Maximum number of records to return
+//   - X-Offset: Number of records to skip
+//   - X-Preload: Comma-separated list of relations to preload
+//   - X-Expand: Comma-separated list of relations to expand (LEFT JOIN)
+//   - X-Distinct: Boolean to enable DISTINCT queries
+//   - X-Skip-Count: Boolean to skip total count query
+//   - X-Response-Format: Response format (detail, simple, syncfusion)
+//   - X-Clean-JSON: Boolean to remove null/empty fields
+//   - X-Custom-SQL-Where: Custom SQL WHERE clause (AND)
+//   - X-Custom-SQL-Or: Custom SQL WHERE clause (OR)
+//
+// # Usage Example
+//
+//	// Create a handler with GORM
+//	handler := restheadspec.NewHandlerWithGORM(db)
+//
+//	// Register models
+//	handler.Registry.RegisterModel("users", User{})
+//
+//	// Setup routes with Mux
+//	muxRouter := mux.NewRouter()
+//	restheadspec.SetupMuxRoutes(muxRouter, handler)
+//
+//	// Make a request with headers
+//	// GET /public/users
+//	// X-Filters: [{"column":"age","operator":"gt","value":18}]
+//	// X-Sort: [{"column":"name","direction":"asc"}]
+//	// X-Limit: 10
 package restheadspec
 
 import (
