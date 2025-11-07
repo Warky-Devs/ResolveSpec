@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/Warky-Devs/ResolveSpec/pkg/common"
 	"github.com/uptrace/bun"
@@ -76,16 +77,25 @@ func (b *BunAdapter) RunInTransaction(ctx context.Context, fn func(common.Databa
 
 // BunSelectQuery implements SelectQuery for Bun
 type BunSelectQuery struct {
-	query *bun.SelectQuery
+	query      *bun.SelectQuery
+	tableName  string
+	tableAlias string
 }
 
 func (b *BunSelectQuery) Model(model interface{}) common.SelectQuery {
 	b.query = b.query.Model(model)
+
+	// Try to get table name from model if it implements TableNameProvider
+	if provider, ok := model.(common.TableNameProvider); ok {
+		b.tableName = provider.TableName()
+	}
+
 	return b
 }
 
 func (b *BunSelectQuery) Table(table string) common.SelectQuery {
 	b.query = b.query.Table(table)
+	b.tableName = table
 	return b
 }
 
@@ -105,12 +115,81 @@ func (b *BunSelectQuery) WhereOr(query string, args ...interface{}) common.Selec
 }
 
 func (b *BunSelectQuery) Join(query string, args ...interface{}) common.SelectQuery {
-	b.query = b.query.Join(query, args...)
+	// Extract optional prefix from args
+	// If the last arg is a string that looks like a table prefix, use it
+	var prefix string
+	sqlArgs := args
+
+	if len(args) > 0 {
+		if lastArg, ok := args[len(args)-1].(string); ok && len(lastArg) < 50 && !strings.Contains(lastArg, " ") {
+			// Likely a prefix, not a SQL parameter
+			prefix = lastArg
+			sqlArgs = args[:len(args)-1]
+		}
+	}
+
+	// If no prefix provided, use the table name as prefix
+	if prefix == "" && b.tableName != "" {
+		prefix = b.tableName
+		// Extract just the table name if it has schema
+		if idx := strings.LastIndex(prefix, "."); idx != -1 {
+			prefix = prefix[idx+1:]
+		}
+	}
+
+	// If prefix is provided, add it as an alias in the join
+	// Bun expects: "JOIN table AS alias ON condition"
+	joinClause := query
+	if prefix != "" && !strings.Contains(strings.ToUpper(query), " AS ") {
+		// If query doesn't already have AS, check if it's a simple table name
+		parts := strings.Fields(query)
+		if len(parts) > 0 && !strings.HasPrefix(strings.ToUpper(parts[0]), "JOIN") {
+			// Simple table name, add prefix: "table AS prefix"
+			joinClause = fmt.Sprintf("%s AS %s", parts[0], prefix)
+			if len(parts) > 1 {
+				// Has ON clause: "table ON ..." becomes "table AS prefix ON ..."
+				joinClause += " " + strings.Join(parts[1:], " ")
+			}
+		}
+	}
+
+	b.query = b.query.Join(joinClause, sqlArgs...)
 	return b
 }
 
 func (b *BunSelectQuery) LeftJoin(query string, args ...interface{}) common.SelectQuery {
-	b.query = b.query.Join("LEFT JOIN " + query, args...)
+	// Extract optional prefix from args
+	var prefix string
+	sqlArgs := args
+
+	if len(args) > 0 {
+		if lastArg, ok := args[len(args)-1].(string); ok && len(lastArg) < 50 && !strings.Contains(lastArg, " ") {
+			prefix = lastArg
+			sqlArgs = args[:len(args)-1]
+		}
+	}
+
+	// If no prefix provided, use the table name as prefix
+	if prefix == "" && b.tableName != "" {
+		prefix = b.tableName
+		if idx := strings.LastIndex(prefix, "."); idx != -1 {
+			prefix = prefix[idx+1:]
+		}
+	}
+
+	// Construct LEFT JOIN with prefix
+	joinClause := query
+	if prefix != "" && !strings.Contains(strings.ToUpper(query), " AS ") {
+		parts := strings.Fields(query)
+		if len(parts) > 0 && !strings.HasPrefix(strings.ToUpper(parts[0]), "LEFT") && !strings.HasPrefix(strings.ToUpper(parts[0]), "JOIN") {
+			joinClause = fmt.Sprintf("%s AS %s", parts[0], prefix)
+			if len(parts) > 1 {
+				joinClause += " " + strings.Join(parts[1:], " ")
+			}
+		}
+	}
+
+	b.query = b.query.Join("LEFT JOIN " + joinClause, sqlArgs...)
 	return b
 }
 

@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/Warky-Devs/ResolveSpec/pkg/common"
 	"gorm.io/gorm"
@@ -67,16 +69,25 @@ func (g *GormAdapter) RunInTransaction(ctx context.Context, fn func(common.Datab
 
 // GormSelectQuery implements SelectQuery for GORM
 type GormSelectQuery struct {
-	db *gorm.DB
+	db         *gorm.DB
+	tableName  string
+	tableAlias string
 }
 
 func (g *GormSelectQuery) Model(model interface{}) common.SelectQuery {
 	g.db = g.db.Model(model)
+
+	// Try to get table name from model if it implements TableNameProvider
+	if provider, ok := model.(common.TableNameProvider); ok {
+		g.tableName = provider.TableName()
+	}
+
 	return g
 }
 
 func (g *GormSelectQuery) Table(table string) common.SelectQuery {
 	g.db = g.db.Table(table)
+	g.tableName = table
 	return g
 }
 
@@ -96,12 +107,81 @@ func (g *GormSelectQuery) WhereOr(query string, args ...interface{}) common.Sele
 }
 
 func (g *GormSelectQuery) Join(query string, args ...interface{}) common.SelectQuery {
-	g.db = g.db.Joins(query, args...)
+	// Extract optional prefix from args
+	// If the last arg is a string that looks like a table prefix, use it
+	var prefix string
+	sqlArgs := args
+
+	if len(args) > 0 {
+		if lastArg, ok := args[len(args)-1].(string); ok && len(lastArg) < 50 && !strings.Contains(lastArg, " ") {
+			// Likely a prefix, not a SQL parameter
+			prefix = lastArg
+			sqlArgs = args[:len(args)-1]
+		}
+	}
+
+	// If no prefix provided, use the table name as prefix
+	if prefix == "" && g.tableName != "" {
+		prefix = g.tableName
+		// Extract just the table name if it has schema
+		if idx := strings.LastIndex(prefix, "."); idx != -1 {
+			prefix = prefix[idx+1:]
+		}
+	}
+
+	// If prefix is provided, add it as an alias in the join
+	// GORM expects: "JOIN table AS alias ON condition"
+	joinClause := query
+	if prefix != "" && !strings.Contains(strings.ToUpper(query), " AS ") {
+		// If query doesn't already have AS, check if it's a simple table name
+		parts := strings.Fields(query)
+		if len(parts) > 0 && !strings.HasPrefix(strings.ToUpper(parts[0]), "JOIN") {
+			// Simple table name, add prefix: "table AS prefix"
+			joinClause = fmt.Sprintf("%s AS %s", parts[0], prefix)
+			if len(parts) > 1 {
+				// Has ON clause: "table ON ..." becomes "table AS prefix ON ..."
+				joinClause += " " + strings.Join(parts[1:], " ")
+			}
+		}
+	}
+
+	g.db = g.db.Joins(joinClause, sqlArgs...)
 	return g
 }
 
 func (g *GormSelectQuery) LeftJoin(query string, args ...interface{}) common.SelectQuery {
-	g.db = g.db.Joins("LEFT JOIN "+query, args...)
+	// Extract optional prefix from args
+	var prefix string
+	sqlArgs := args
+
+	if len(args) > 0 {
+		if lastArg, ok := args[len(args)-1].(string); ok && len(lastArg) < 50 && !strings.Contains(lastArg, " ") {
+			prefix = lastArg
+			sqlArgs = args[:len(args)-1]
+		}
+	}
+
+	// If no prefix provided, use the table name as prefix
+	if prefix == "" && g.tableName != "" {
+		prefix = g.tableName
+		if idx := strings.LastIndex(prefix, "."); idx != -1 {
+			prefix = prefix[idx+1:]
+		}
+	}
+
+	// Construct LEFT JOIN with prefix
+	joinClause := query
+	if prefix != "" && !strings.Contains(strings.ToUpper(query), " AS ") {
+		parts := strings.Fields(query)
+		if len(parts) > 0 && !strings.HasPrefix(strings.ToUpper(parts[0]), "LEFT") && !strings.HasPrefix(strings.ToUpper(parts[0]), "JOIN") {
+			joinClause = fmt.Sprintf("%s AS %s", parts[0], prefix)
+			if len(parts) > 1 {
+				joinClause += " " + strings.Join(parts[1:], " ")
+			}
+		}
+	}
+
+	g.db = g.db.Joins("LEFT JOIN "+joinClause, sqlArgs...)
 	return g
 }
 

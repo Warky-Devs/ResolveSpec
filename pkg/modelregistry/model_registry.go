@@ -2,6 +2,7 @@ package modelregistry
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 )
 
@@ -26,11 +27,25 @@ func NewModelRegistry() *DefaultModelRegistry {
 func (r *DefaultModelRegistry) RegisterModel(name string, model interface{}) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	
+
 	if _, exists := r.models[name]; exists {
 		return fmt.Errorf("model %s already registered", name)
 	}
-	
+
+	// Validate that model is a non-pointer struct
+	modelType := reflect.TypeOf(model)
+	if modelType == nil {
+		return fmt.Errorf("model cannot be nil")
+	}
+
+	if modelType.Kind() == reflect.Ptr {
+		return fmt.Errorf("model must be a non-pointer struct, got pointer to %s", modelType.Elem().Kind())
+	}
+
+	if modelType.Kind() != reflect.Struct {
+		return fmt.Errorf("model must be a struct, got %s", modelType.Kind())
+	}
+
 	r.models[name] = model
 	return nil
 }

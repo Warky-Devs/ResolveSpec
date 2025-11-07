@@ -93,7 +93,11 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, schem
 		return
 	}
 
-	query := h.db.NewSelect().Model(model)
+	// Model is now a non-pointer struct, create a pointer instance for ORM
+	modelType := reflect.TypeOf(model)
+	modelPtr := reflect.New(modelType).Interface()
+
+	query := h.db.NewSelect().Model(modelPtr)
 
 	// Get table name
 	tableName := h.getTableName(schema, entity, model)
@@ -149,7 +153,8 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, schem
 	var result interface{}
 	if id != "" {
 		logger.Debug("Querying single record with ID: %s", id)
-		singleResult := model
+		// Create a pointer to the struct type for scanning
+		singleResult := reflect.New(modelType).Interface()
 		query = query.Where("id = ?", id)
 		if err := query.Scan(ctx, singleResult); err != nil {
 			logger.Error("Error querying record: %v", err)
@@ -159,7 +164,8 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, schem
 		result = singleResult
 	} else {
 		logger.Debug("Querying multiple records")
-		sliceType := reflect.SliceOf(reflect.TypeOf(model))
+		// Create a slice of the struct type (not pointers)
+		sliceType := reflect.SliceOf(modelType)
 		results := reflect.New(sliceType).Interface()
 
 		if err := query.Scan(ctx, results); err != nil {

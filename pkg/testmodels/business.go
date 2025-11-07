@@ -140,22 +140,22 @@ func (Comment) TableName() string {
 
 // RegisterTestModels registers all test models with the provided registry
 func RegisterTestModels(registry *modelregistry.DefaultModelRegistry) {
-	registry.RegisterModel("departments", &Department{})
-	registry.RegisterModel("employees", &Employee{})
-	registry.RegisterModel("projects", &Project{})
-	registry.RegisterModel("project_tasks", &ProjectTask{})
-	registry.RegisterModel("documents", &Document{})
-	registry.RegisterModel("comments", &Comment{})
+	registry.RegisterModel("departments", Department{})
+	registry.RegisterModel("employees", Employee{})
+	registry.RegisterModel("projects", Project{})
+	registry.RegisterModel("project_tasks", ProjectTask{})
+	registry.RegisterModel("documents", Document{})
+	registry.RegisterModel("comments", Comment{})
 }
 
 // GetTestModels returns a list of all test model instances
 func GetTestModels() []interface{} {
 	return []interface{}{
-		&Department{},
-		&Employee{},
-		&Project{},
-		&ProjectTask{},
-		&Document{},
-		&Comment{},
+		Department{},
+		Employee{},
+		Project{},
+		ProjectTask{},
+		Document{},
+		Comment{},
 	}
 }
