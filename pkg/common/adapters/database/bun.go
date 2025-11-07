@@ -82,6 +82,7 @@ func (b *BunAdapter) RunInTransaction(ctx context.Context, fn func(common.Databa
 type BunSelectQuery struct {
 	query      *bun.SelectQuery
 	db         bun.IDB // Store DB connection for count queries
+	hasModel   bool    // Track if Model() was called
 	schema     string  // Separated schema name
 	tableName  string  // Just the table name, without schema
 	tableAlias string
@@ -89,6 +90,7 @@ type BunSelectQuery struct {
 
 func (b *BunSelectQuery) Model(model interface{}) common.SelectQuery {
 	b.query = b.query.Model(model)
+	b.hasModel = true // Mark that we have a model
 
 	// Try to get table name from model if it implements TableNameProvider
 	if provider, ok := model.(common.TableNameProvider); ok {
@@ -232,10 +234,19 @@ func (b *BunSelectQuery) Scan(ctx context.Context, dest interface{}) error {
 }
 
 func (b *BunSelectQuery) Count(ctx context.Context) (int, error) {
-	// Bun's Count() method works properly and handles column selections automatically
-	// It builds: SELECT COUNT(*) FROM (original query) AS subquery
-	// This works with both Model() and Table() set
-	count, err := b.query.Count(ctx)
+	// If Model() was set, use bun's native Count() which works properly
+	if b.hasModel {
+		count, err := b.query.Count(ctx)
+		return count, err
+	}
+
+	// Otherwise, wrap as subquery to avoid "Model(nil)" error
+	// This is needed when only Table() is set without a model
+	var count int
+	err := b.db.NewSelect().
+		TableExpr("(?) AS subquery", b.query).
+		ColumnExpr("COUNT(*)").
+		Scan(ctx, &count)
 	return count, err
 }
 

@@ -172,12 +172,16 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	logger.Info("Reading records from %s.%s", schema, entity)
 
 	// Create the model pointer for Scan() operations
-	// We don't set it on the query to avoid table duplication in FROM clause
 	sliceType := reflect.SliceOf(reflect.PointerTo(modelType))
 	modelPtr := reflect.New(sliceType).Interface()
 
-	// Use only Table() - model will be provided to Scan() directly
-	query := h.db.NewSelect().Table(tableName)
+	// Start with Model() to avoid "Model(nil)" errors in Count()
+	query := h.db.NewSelect().Model(model)
+
+	// Only set Table() if the model doesn't provide a table name
+	if provider, ok := model.(common.TableNameProvider); !ok || provider.TableName() == "" {
+		query = query.Table(tableName)
+	}
 
 	// Apply column selection
 	if len(options.Columns) > 0 {

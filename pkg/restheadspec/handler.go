@@ -201,9 +201,13 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 
 	logger.Info("Reading records from %s.%s", schema, entity)
 
-	// Use Table() with the resolved table name
-	// Model will be provided to Scan() directly to avoid table duplication in FROM clause
-	query := h.db.NewSelect().Table(tableName)
+	// Start with Model() to avoid "Model(nil)" errors in Count()
+	query := h.db.NewSelect().Model(model)
+
+	// Only set Table() if the model doesn't provide a table name
+	if provider, ok := model.(common.TableNameProvider); !ok || provider.TableName() == "" {
+		query = query.Table(tableName)
+	}
 
 	// Apply column selection
 	if len(options.Columns) > 0 {
