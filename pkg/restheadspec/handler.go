@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"runtime/debug"
 	"strings"
 
 	"github.com/Warky-Devs/ResolveSpec/pkg/common"
@@ -27,9 +28,23 @@ func NewHandler(db common.Database, registry common.ModelRegistry) *Handler {
 	}
 }
 
+// handlePanic is a helper function to handle panics with stack traces
+func (h *Handler) handlePanic(w common.ResponseWriter, method string, err interface{}) {
+	stack := debug.Stack()
+	logger.Error("Panic in %s: %v\nStack trace:\n%s", method, err, string(stack))
+	h.sendError(w, http.StatusInternalServerError, "internal_error", fmt.Sprintf("Internal server error in %s", method), fmt.Errorf("%v", err))
+}
+
 // Handle processes API requests through router-agnostic interface
 // Options are read from HTTP headers instead of request body
 func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[string]string) {
+	// Capture panics and return error response
+	defer func() {
+		if err := recover(); err != nil {
+			h.handlePanic(w, "Handle", err)
+		}
+	}()
+
 	ctx := context.Background()
 
 	schema := params["schema"]
@@ -107,6 +122,13 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 
 // HandleGet processes GET requests for metadata
 func (h *Handler) HandleGet(w common.ResponseWriter, r common.Request, params map[string]string) {
+	// Capture panics and return error response
+	defer func() {
+		if err := recover(); err != nil {
+			h.handlePanic(w, "HandleGet", err)
+		}
+	}()
+
 	schema := params["schema"]
 	entity := params["entity"]
 
@@ -126,6 +148,13 @@ func (h *Handler) HandleGet(w common.ResponseWriter, r common.Request, params ma
 // parseOptionsFromHeaders is now implemented in headers.go
 
 func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id string, options ExtendedRequestOptions) {
+	// Capture panics and return error response
+	defer func() {
+		if err := recover(); err != nil {
+			h.handlePanic(w, "handleRead", err)
+		}
+	}()
+
 	schema := GetSchema(ctx)
 	entity := GetEntity(ctx)
 	tableName := GetTableName(ctx)
@@ -252,6 +281,13 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 }
 
 func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, data interface{}, options ExtendedRequestOptions) {
+	// Capture panics and return error response
+	defer func() {
+		if err := recover(); err != nil {
+			h.handlePanic(w, "handleCreate", err)
+		}
+	}()
+
 	schema := GetSchema(ctx)
 	entity := GetEntity(ctx)
 	tableName := GetTableName(ctx)
@@ -322,6 +358,13 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 }
 
 func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id string, idPtr *int64, data interface{}, options ExtendedRequestOptions) {
+	// Capture panics and return error response
+	defer func() {
+		if err := recover(); err != nil {
+			h.handlePanic(w, "handleUpdate", err)
+		}
+	}()
+
 	schema := GetSchema(ctx)
 	entity := GetEntity(ctx)
 	tableName := GetTableName(ctx)
@@ -369,6 +412,13 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 }
 
 func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id string) {
+	// Capture panics and return error response
+	defer func() {
+		if err := recover(); err != nil {
+			h.handlePanic(w, "handleDelete", err)
+		}
+	}()
+
 	schema := GetSchema(ctx)
 	entity := GetEntity(ctx)
 	tableName := GetTableName(ctx)
