@@ -73,6 +73,26 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 		return
 	}
 
+	// Validate that the model is a struct type (not a slice or pointer to slice)
+	modelType := reflect.TypeOf(model)
+	originalType := modelType
+	for modelType != nil && (modelType.Kind() == reflect.Ptr || modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array) {
+		modelType = modelType.Elem()
+	}
+
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		logger.Error("Model for %s.%s must be a struct type, got %v. Please register models as struct types, not slices or pointers to slices.", schema, entity, originalType)
+		h.sendError(w, http.StatusInternalServerError, "invalid_model_type",
+			fmt.Sprintf("Model must be a struct type, got %v. Ensure you register the struct (e.g., ModelCoreAccount{}) not a slice (e.g., []*ModelCoreAccount)", originalType),
+			fmt.Errorf("invalid model type: %v", originalType))
+		return
+	}
+
+	// If the registered model was a pointer or slice, use the unwrapped struct type
+	if originalType != modelType {
+		model = reflect.New(modelType).Elem().Interface()
+	}
+
 	// Create a pointer to the model type for database operations
 	modelPtr := reflect.New(reflect.TypeOf(model)).Interface()
 	tableName := h.getTableName(schema, entity, model)
@@ -132,7 +152,21 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	entity := GetEntity(ctx)
 	tableName := GetTableName(ctx)
 	model := GetModel(ctx)
-	modelPtr := GetModelPtr(ctx)
+
+	// Validate and unwrap model type to get base struct
+	modelType := reflect.TypeOf(model)
+	for modelType != nil && (modelType.Kind() == reflect.Ptr || modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array) {
+		modelType = modelType.Elem()
+	}
+
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		logger.Error("Model must be a struct type, got %v for %s.%s", modelType, schema, entity)
+		h.sendError(w, http.StatusInternalServerError, "invalid_model", "Model must be a struct type", fmt.Errorf("invalid model type: %v", modelType))
+		return
+	}
+
+	// Create a pointer to the model type for database operations
+	modelPtr := reflect.New(modelType).Interface()
 
 	logger.Info("Reading records from %s.%s", schema, entity)
 
@@ -189,8 +223,8 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	var result interface{}
 	if id != "" {
 		logger.Debug("Querying single record with ID: %s", id)
-		// Create a pointer to the struct type for scanning
-		singleResult := reflect.New(reflect.TypeOf(model)).Interface()
+		// Create a pointer to the struct type for scanning - use modelType which is already unwrapped
+		singleResult := reflect.New(modelType).Interface()
 		query = query.Where("id = ?", id)
 		if err := query.Scan(ctx, singleResult); err != nil {
 			logger.Error("Error querying record: %v", err)
@@ -200,8 +234,8 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		result = singleResult
 	} else {
 		logger.Debug("Querying multiple records")
-		// Create a slice of pointers to the model type
-		sliceType := reflect.SliceOf(reflect.PointerTo(reflect.TypeOf(model)))
+		// Create a slice of pointers to the model type - use modelType which is already unwrapped
+		sliceType := reflect.SliceOf(reflect.PointerTo(modelType))
 		results := reflect.New(sliceType).Interface()
 
 		if err := query.Scan(ctx, results); err != nil {
@@ -444,8 +478,21 @@ func (h *Handler) getTableName(schema, entity string, model interface{}) string 
 
 func (h *Handler) generateMetadata(schema, entity string, model interface{}) *common.TableMetadata {
 	modelType := reflect.TypeOf(model)
-	if modelType.Kind() == reflect.Ptr {
+
+	// Unwrap pointers, slices, and arrays to get to the base struct type
+	for modelType != nil && (modelType.Kind() == reflect.Ptr || modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array) {
 		modelType = modelType.Elem()
+	}
+
+	// Validate that we have a struct type
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		logger.Error("Model type must be a struct, got %v for %s.%s", modelType, schema, entity)
+		return &common.TableMetadata{
+			Schema:    schema,
+			Table:     entity,
+			Columns:   make([]common.Column, 0),
+			Relations: make([]string, 0),
+		}
 	}
 
 	metadata := &common.TableMetadata{
@@ -591,8 +638,16 @@ type relationshipInfo struct {
 
 func (h *Handler) applyPreloads(model interface{}, query common.SelectQuery, preloads []common.PreloadOption) common.SelectQuery {
 	modelType := reflect.TypeOf(model)
-	if modelType.Kind() == reflect.Ptr {
+
+	// Unwrap pointers, slices, and arrays to get to the base struct type
+	for modelType != nil && (modelType.Kind() == reflect.Ptr || modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array) {
 		modelType = modelType.Elem()
+	}
+
+	// Validate that we have a struct type
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		logger.Warn("Cannot apply preloads to non-struct type: %v", modelType)
+		return query
 	}
 
 	for _, preload := range preloads {
@@ -618,6 +673,12 @@ func (h *Handler) applyPreloads(model interface{}, query common.SelectQuery, pre
 }
 
 func (h *Handler) getRelationshipInfo(modelType reflect.Type, relationName string) *relationshipInfo {
+	// Ensure we have a struct type
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		logger.Warn("Cannot get relationship info from non-struct type: %v", modelType)
+		return nil
+	}
+
 	for i := 0; i < modelType.NumField(); i++ {
 		field := modelType.Field(i)
 		jsonTag := field.Tag.Get("json")

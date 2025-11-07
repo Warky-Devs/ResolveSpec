@@ -38,12 +38,28 @@ func (r *DefaultModelRegistry) RegisterModel(name string, model interface{}) err
 		return fmt.Errorf("model cannot be nil")
 	}
 
-	if modelType.Kind() == reflect.Ptr {
-		return fmt.Errorf("model must be a non-pointer struct, got pointer to %s", modelType.Elem().Kind())
+	originalType := modelType
+
+	// Unwrap pointers, slices, and arrays to check the underlying type
+	for modelType.Kind() == reflect.Ptr || modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array {
+		modelType = modelType.Elem()
 	}
 
+	// Validate that the underlying type is a struct
 	if modelType.Kind() != reflect.Struct {
-		return fmt.Errorf("model must be a struct, got %s", modelType.Kind())
+		return fmt.Errorf("model must be a struct or pointer to struct, got %s", originalType.String())
+	}
+
+	// If a pointer/slice/array was passed, unwrap to the base struct
+	if originalType != modelType {
+		// Create a zero value of the struct type
+		model = reflect.New(modelType).Elem().Interface()
+	}
+
+	// Additional check: ensure model is not a pointer
+	finalType := reflect.TypeOf(model)
+	if finalType.Kind() == reflect.Ptr {
+		return fmt.Errorf("model must be a non-pointer struct, got pointer to %s. Use MyModel{} instead of &MyModel{}", finalType.Elem().Name())
 	}
 
 	r.models[name] = model
