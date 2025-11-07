@@ -115,6 +115,11 @@ func (b *BunSelectQuery) Preload(relation string, conditions ...interface{}) com
 
 ---
 
+### 6. Pre / Post select/update/delete query in transaction.
+- This will allow us to set a user before doing a select
+- When making changes, we can have the trigger fire with the correct user.
+- Maybe wrap the handleRead,Update,Create,Delete handlers in a transaction with context that can abort when the request is cancelled or a configurable timeout is reached.
+
 ## Additional Considerations
 
 ### Documentation
