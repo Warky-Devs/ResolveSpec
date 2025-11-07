@@ -22,7 +22,10 @@ func NewBunAdapter(db *bun.DB) *BunAdapter {
 }
 
 func (b *BunAdapter) NewSelect() common.SelectQuery {
-	return &BunSelectQuery{query: b.db.NewSelect()}
+	return &BunSelectQuery{
+		query: b.db.NewSelect(),
+		db:    b.db,
+	}
 }
 
 func (b *BunAdapter) NewInsert() common.InsertQuery {
@@ -78,8 +81,9 @@ func (b *BunAdapter) RunInTransaction(ctx context.Context, fn func(common.Databa
 // BunSelectQuery implements SelectQuery for Bun
 type BunSelectQuery struct {
 	query      *bun.SelectQuery
-	schema     string // Separated schema name
-	tableName  string // Just the table name, without schema
+	db         bun.IDB // Store DB connection for count queries
+	schema     string  // Separated schema name
+	tableName  string  // Just the table name, without schema
 	tableAlias string
 }
 
@@ -228,10 +232,10 @@ func (b *BunSelectQuery) Scan(ctx context.Context, dest interface{}) error {
 }
 
 func (b *BunSelectQuery) Count(ctx context.Context) (int, error) {
-	// Use ColumnExpr with Scan instead of Count() to avoid requiring a model
-	// This works with just Table() set and avoids "Model(nil)" error
-	var count int
-	err := b.query.ColumnExpr("count(*)").Scan(ctx, &count)
+	// Bun's Count() method works properly and handles column selections automatically
+	// It builds: SELECT COUNT(*) FROM (original query) AS subquery
+	// This works with both Model() and Table() set
+	count, err := b.query.Count(ctx)
 	return count, err
 }
 
@@ -381,7 +385,10 @@ type BunTxAdapter struct {
 }
 
 func (b *BunTxAdapter) NewSelect() common.SelectQuery {
-	return &BunSelectQuery{query: b.tx.NewSelect()}
+	return &BunSelectQuery{
+		query: b.tx.NewSelect(),
+		db:    b.tx,
+	}
 }
 
 func (b *BunTxAdapter) NewInsert() common.InsertQuery {
