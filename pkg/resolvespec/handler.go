@@ -175,11 +175,14 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	sliceType := reflect.SliceOf(reflect.PointerTo(modelType))
 	modelPtr := reflect.New(sliceType).Interface()
 
-	// Start with Model() to avoid "Model(nil)" errors in Count()
-	query := h.db.NewSelect().Model(model)
+	// Start with Model() using the slice pointer to avoid "Model(nil)" errors in Count()
+	// Bun's Model() accepts both single pointers and slice pointers
+	query := h.db.NewSelect().Model(modelPtr)
 
-	// Only set Table() if the model doesn't provide a table name
-	if provider, ok := model.(common.TableNameProvider); !ok || provider.TableName() == "" {
+	// Only set Table() if the model doesn't provide a table name via the underlying type
+	// Create a temporary instance to check for TableNameProvider
+	tempInstance := reflect.New(modelType).Interface()
+	if provider, ok := tempInstance.(common.TableNameProvider); !ok || provider.TableName() == "" {
 		query = query.Table(tableName)
 	}
 
