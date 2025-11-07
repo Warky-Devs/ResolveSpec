@@ -19,21 +19,21 @@ type ExtendedRequestOptions struct {
 	CleanJSON bool
 
 	// Advanced filtering
-	SearchColumns []string
+	SearchColumns  []string
 	CustomSQLWhere string
-	CustomSQLOr string
+	CustomSQLOr    string
 
 	// Joins
 	Expand []ExpandOption
 
 	// Advanced features
-	AdvancedSQL map[string]string // Column -> SQL expression
-	ComputedQL map[string]string  // Column -> CQL expression
-	Distinct bool
-	SkipCount bool
-	SkipCache bool
+	AdvancedSQL    map[string]string // Column -> SQL expression
+	ComputedQL     map[string]string // Column -> CQL expression
+	Distinct       bool
+	SkipCount      bool
+	SkipCache      bool
 	FetchRowNumber *string
-	PKRow *string
+	PKRow          *string
 
 	// Response format
 	ResponseFormat string // "simple", "detail", "syncfusion"
@@ -42,16 +42,16 @@ type ExtendedRequestOptions struct {
 	AtomicTransaction bool
 
 	// Cursor pagination
-	CursorForward string
+	CursorForward  string
 	CursorBackward string
 }
 
 // ExpandOption represents a relation expansion configuration
 type ExpandOption struct {
 	Relation string
-	Columns []string
-	Where string
-	Sort string
+	Columns  []string
+	Where    string
+	Sort     string
 }
 
 // decodeHeaderValue decodes base64 encoded header values
@@ -85,12 +85,13 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 	options := ExtendedRequestOptions{
 		RequestOptions: common.RequestOptions{
 			Filters: make([]common.FilterOption, 0),
-			Sort: make([]common.SortOption, 0),
+			Sort:    make([]common.SortOption, 0),
 			Preload: make([]common.PreloadOption, 0),
 		},
-		AdvancedSQL: make(map[string]string),
-		ComputedQL: make(map[string]string),
-		Expand: make([]ExpandOption, 0),
+		AdvancedSQL:    make(map[string]string),
+		ComputedQL:     make(map[string]string),
+		Expand:         make([]ExpandOption, 0),
+		ResponseFormat: "simple", // Default response format
 	}
 
 	// Get all headers
@@ -212,9 +213,9 @@ func (h *Handler) parseNotSelectFields(options *ExtendedRequestOptions, value st
 func (h *Handler) parseFieldFilter(options *ExtendedRequestOptions, headerKey, value string) {
 	colName := strings.TrimPrefix(headerKey, "x-fieldfilter-")
 	options.Filters = append(options.Filters, common.FilterOption{
-		Column: colName,
+		Column:   colName,
 		Operator: "eq",
-		Value: value,
+		Value:    value,
 	})
 }
 
@@ -223,9 +224,9 @@ func (h *Handler) parseSearchFilter(options *ExtendedRequestOptions, headerKey, 
 	colName := strings.TrimPrefix(headerKey, "x-searchfilter-")
 	// Use ILIKE for fuzzy search
 	options.Filters = append(options.Filters, common.FilterOption{
-		Column: colName,
+		Column:   colName,
 		Operator: "ilike",
-		Value: "%" + value + "%",
+		Value:    "%" + value + "%",
 	})
 }
 
@@ -407,7 +408,7 @@ func (h *Handler) parseSorting(options *ExtendedRequestOptions, value string) {
 		}
 
 		options.Sort = append(options.Sort, common.SortOption{
-			Column: colName,
+			Column:    colName,
 			Direction: direction,
 		})
 	}

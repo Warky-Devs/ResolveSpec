@@ -695,7 +695,7 @@ func (h *Handler) sendFormattedResponse(w common.ResponseWriter, data interface{
 	if options.CleanJSON {
 		data = h.cleanJSON(data)
 	}
-
+	w.SetHeader("Content-Type", "application/json")
 	// Format response based on response format option
 	switch options.ResponseFormat {
 	case "simple":
