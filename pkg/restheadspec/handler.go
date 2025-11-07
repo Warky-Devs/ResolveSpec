@@ -239,10 +239,21 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		// This may need to be handled differently per database adapter
 	}
 
-	// Apply filters
-	for _, filter := range options.Filters {
-		logger.Debug("Applying filter: %s %s %v", filter.Column, filter.Operator, filter.Value)
-		query = h.applyFilter(query, filter)
+	// Apply filters - validate and adjust for column types first
+	for i := range options.Filters {
+		filter := &options.Filters[i]
+
+		// Validate and adjust filter based on column type
+		castInfo := h.ValidateAndAdjustFilterForColumnType(filter, model)
+
+		// Default to AND if LogicOperator is not set
+		logicOp := filter.LogicOperator
+		if logicOp == "" {
+			logicOp = "AND"
+		}
+
+		logger.Debug("Applying filter: %s %s %v (needsCast=%v, logic=%s)", filter.Column, filter.Operator, filter.Value, castInfo.NeedsCast, logicOp)
+		query = h.applyFilter(query, *filter, tableName, castInfo.NeedsCast, logicOp)
 	}
 
 	// Apply custom SQL WHERE clause (AND condition)
@@ -491,55 +502,96 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 	}, nil)
 }
 
-func (h *Handler) applyFilter(query common.SelectQuery, filter common.FilterOption) common.SelectQuery {
+// qualifyColumnName ensures column name is fully qualified with table name if not already
+func (h *Handler) qualifyColumnName(columnName, fullTableName string) string {
+	// Check if column already has a table/schema prefix (contains a dot)
+	if strings.Contains(columnName, ".") {
+		return columnName
+	}
+
+	// If no table name provided, return column as-is
+	if fullTableName == "" {
+		return columnName
+	}
+
+	// Extract just the table name from "schema.table" format
+	// Only use the table name part, not the schema
+	tableOnly := fullTableName
+	if idx := strings.LastIndex(fullTableName, "."); idx != -1 {
+		tableOnly = fullTableName[idx+1:]
+	}
+
+	// Return column qualified with just the table name
+	return fmt.Sprintf("%s.%s", tableOnly, columnName)
+}
+
+func (h *Handler) applyFilter(query common.SelectQuery, filter common.FilterOption, tableName string, needsCast bool, logicOp string) common.SelectQuery {
+	// Qualify the column name with table name if not already qualified
+	qualifiedColumn := h.qualifyColumnName(filter.Column, tableName)
+
+	// Apply casting to text if needed for non-numeric columns or non-numeric values
+	if needsCast {
+		qualifiedColumn = fmt.Sprintf("CAST(%s AS TEXT)", qualifiedColumn)
+	}
+
+	// Helper function to apply the correct Where method based on logic operator
+	applyWhere := func(condition string, args ...interface{}) common.SelectQuery {
+		if logicOp == "OR" {
+			return query.WhereOr(condition, args...)
+		}
+		return query.Where(condition, args...)
+	}
+
 	switch strings.ToLower(filter.Operator) {
 	case "eq", "equals":
-		return query.Where(fmt.Sprintf("%s = ?", filter.Column), filter.Value)
+		return applyWhere(fmt.Sprintf("%s = ?", qualifiedColumn), filter.Value)
 	case "neq", "not_equals", "ne":
-		return query.Where(fmt.Sprintf("%s != ?", filter.Column), filter.Value)
+		return applyWhere(fmt.Sprintf("%s != ?", qualifiedColumn), filter.Value)
 	case "gt", "greater_than":
-		return query.Where(fmt.Sprintf("%s > ?", filter.Column), filter.Value)
+		return applyWhere(fmt.Sprintf("%s > ?", qualifiedColumn), filter.Value)
 	case "gte", "greater_than_equals", "ge":
-		return query.Where(fmt.Sprintf("%s >= ?", filter.Column), filter.Value)
+		return applyWhere(fmt.Sprintf("%s >= ?", qualifiedColumn), filter.Value)
 	case "lt", "less_than":
-		return query.Where(fmt.Sprintf("%s < ?", filter.Column), filter.Value)
+		return applyWhere(fmt.Sprintf("%s < ?", qualifiedColumn), filter.Value)
 	case "lte", "less_than_equals", "le":
-		return query.Where(fmt.Sprintf("%s <= ?", filter.Column), filter.Value)
+		return applyWhere(fmt.Sprintf("%s <= ?", qualifiedColumn), filter.Value)
 	case "like":
-		return query.Where(fmt.Sprintf("%s LIKE ?", filter.Column), filter.Value)
+		return applyWhere(fmt.Sprintf("%s LIKE ?", qualifiedColumn), filter.Value)
 	case "ilike":
 		// Use ILIKE for case-insensitive search (PostgreSQL)
-		// For other databases, cast to citext or use LOWER()
-		return query.Where(fmt.Sprintf("CAST(%s AS TEXT) ILIKE ?", filter.Column), filter.Value)
+		// Column is already cast to TEXT if needed
+		return applyWhere(fmt.Sprintf("%s ILIKE ?", qualifiedColumn), filter.Value)
 	case "in":
-		return query.Where(fmt.Sprintf("%s IN (?)", filter.Column), filter.Value)
+		return applyWhere(fmt.Sprintf("%s IN (?)", qualifiedColumn), filter.Value)
 	case "between":
 		// Handle between operator - exclusive (> val1 AND < val2)
 		if values, ok := filter.Value.([]interface{}); ok && len(values) == 2 {
-			return query.Where(fmt.Sprintf("%s > ? AND %s < ?", filter.Column, filter.Column), values[0], values[1])
+			return applyWhere(fmt.Sprintf("%s > ? AND %s < ?", qualifiedColumn, qualifiedColumn), values[0], values[1])
 		} else if values, ok := filter.Value.([]string); ok && len(values) == 2 {
-			return query.Where(fmt.Sprintf("%s > ? AND %s < ?", filter.Column, filter.Column), values[0], values[1])
+			return applyWhere(fmt.Sprintf("%s > ? AND %s < ?", qualifiedColumn, qualifiedColumn), values[0], values[1])
 		}
 		logger.Warn("Invalid BETWEEN filter value format")
 		return query
 	case "between_inclusive":
 		// Handle between inclusive operator - inclusive (>= val1 AND <= val2)
 		if values, ok := filter.Value.([]interface{}); ok && len(values) == 2 {
-			return query.Where(fmt.Sprintf("%s >= ? AND %s <= ?", filter.Column, filter.Column), values[0], values[1])
+			return applyWhere(fmt.Sprintf("%s >= ? AND %s <= ?", qualifiedColumn, qualifiedColumn), values[0], values[1])
 		} else if values, ok := filter.Value.([]string); ok && len(values) == 2 {
-			return query.Where(fmt.Sprintf("%s >= ? AND %s <= ?", filter.Column, filter.Column), values[0], values[1])
+			return applyWhere(fmt.Sprintf("%s >= ? AND %s <= ?", qualifiedColumn, qualifiedColumn), values[0], values[1])
 		}
 		logger.Warn("Invalid BETWEEN INCLUSIVE filter value format")
 		return query
 	case "is_null", "isnull":
-		// Check for NULL values
-		return query.Where(fmt.Sprintf("(%s IS NULL OR %s = '')", filter.Column, filter.Column))
+		// Check for NULL values - don't use cast for NULL checks
+		colName := h.qualifyColumnName(filter.Column, tableName)
+		return applyWhere(fmt.Sprintf("(%s IS NULL OR %s = '')", colName, colName))
 	case "is_not_null", "isnotnull":
-		// Check for NOT NULL values
-		return query.Where(fmt.Sprintf("(%s IS NOT NULL AND %s != '')", filter.Column, filter.Column))
+		// Check for NOT NULL values - don't use cast for NULL checks
+		colName := h.qualifyColumnName(filter.Column, tableName)
+		return applyWhere(fmt.Sprintf("(%s IS NOT NULL AND %s != '')", colName, colName))
 	default:
 		logger.Warn("Unknown filter operator: %s, defaulting to equals", filter.Operator)
-		return query.Where(fmt.Sprintf("%s = ?", filter.Column), filter.Value)
+		return applyWhere(fmt.Sprintf("%s = ?", qualifiedColumn), filter.Value)
 	}
 }
 

@@ -37,9 +37,10 @@ type PreloadOption struct {
 }
 
 type FilterOption struct {
-	Column   string      `json:"column"`
-	Operator string      `json:"operator"`
-	Value    interface{} `json:"value"`
+	Column        string      `json:"column"`
+	Operator      string      `json:"operator"`
+	Value         interface{} `json:"value"`
+	LogicOperator string      `json:"logic_operator"` // "AND" or "OR" - how this filter combines with previous filters
 }
 
 type SortOption struct {
