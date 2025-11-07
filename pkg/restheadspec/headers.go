@@ -199,6 +199,9 @@ func (h *Handler) parseSelectFields(options *ExtendedRequestOptions, value strin
 		return
 	}
 	options.Columns = h.parseCommaSeparated(value)
+	if len(options.Columns) > 1 {
+		options.CleanJSON = true
+	}
 }
 
 // parseNotSelectFields parses x-not-select-fields header
@@ -207,6 +210,9 @@ func (h *Handler) parseNotSelectFields(options *ExtendedRequestOptions, value st
 		return
 	}
 	options.OmitColumns = h.parseCommaSeparated(value)
+	if len(options.OmitColumns) > 1 {
+		options.CleanJSON = true
+	}
 }
 
 // parseFieldFilter parses x-fieldfilter-{colname} header (exact match)
