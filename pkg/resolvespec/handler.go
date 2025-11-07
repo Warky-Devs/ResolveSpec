@@ -171,8 +171,13 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 
 	logger.Info("Reading records from %s.%s", schema, entity)
 
-	// Use Table() with the resolved table name (don't use Model() as it would add the table twice)
-	query := h.db.NewSelect().Table(tableName)
+	// Create the model pointer early for Bun compatibility
+	// Bun requires Model() to be set for Count() and Scan() operations
+	sliceType := reflect.SliceOf(reflect.PointerTo(modelType))
+	modelPtr := reflect.New(sliceType).Interface()
+
+	// Use Model() and Table() - Bun needs both for proper operation
+	query := h.db.NewSelect().Model(modelPtr).Table(tableName)
 
 	// Apply column selection
 	if len(options.Columns) > 0 {
@@ -224,7 +229,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	var result interface{}
 	if id != "" {
 		logger.Debug("Querying single record with ID: %s", id)
-		// Create a pointer to the struct type for scanning - use modelType which is already unwrapped
+		// For single record, create a new pointer to the struct type
 		singleResult := reflect.New(modelType).Interface()
 		query = query.Where("id = ?", id)
 		if err := query.Scan(ctx, singleResult); err != nil {
@@ -235,16 +240,13 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		result = singleResult
 	} else {
 		logger.Debug("Querying multiple records")
-		// Create a slice of pointers to the model type - use modelType which is already unwrapped
-		sliceType := reflect.SliceOf(reflect.PointerTo(modelType))
-		results := reflect.New(sliceType).Interface()
-
-		if err := query.Scan(ctx, results); err != nil {
+		// Use the modelPtr already created and set on the query
+		if err := query.Scan(ctx, modelPtr); err != nil {
 			logger.Error("Error querying records: %v", err)
 			h.sendError(w, http.StatusInternalServerError, "query_error", "Error executing query", err)
 			return
 		}
-		result = reflect.ValueOf(results).Elem().Interface()
+		result = reflect.ValueOf(modelPtr).Elem().Interface()
 	}
 
 	logger.Info("Successfully retrieved records")

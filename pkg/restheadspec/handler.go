@@ -201,8 +201,9 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 
 	logger.Info("Reading records from %s.%s", schema, entity)
 
-	// Use Table() with the resolved table name (don't use Model() as it would add the table twice)
-	query := h.db.NewSelect().Table(tableName)
+	// Use Table() with the resolved table name and Model() for Bun compatibility
+	// Bun requires Model() to be set for Count() and Scan() operations
+	query := h.db.NewSelect().Model(modelPtr).Table(tableName)
 
 	// Apply column selection
 	if len(options.Columns) > 0 {
