@@ -171,13 +171,13 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 
 	logger.Info("Reading records from %s.%s", schema, entity)
 
-	// Create the model pointer early for Bun compatibility
-	// Bun requires Model() to be set for Count() and Scan() operations
+	// Create the model pointer for Scan() operations
+	// We don't set it on the query to avoid table duplication in FROM clause
 	sliceType := reflect.SliceOf(reflect.PointerTo(modelType))
 	modelPtr := reflect.New(sliceType).Interface()
 
-	// Use Model() and Table() - Bun needs both for proper operation
-	query := h.db.NewSelect().Model(modelPtr).Table(tableName)
+	// Use only Table() - model will be provided to Scan() directly
+	query := h.db.NewSelect().Table(tableName)
 
 	// Apply column selection
 	if len(options.Columns) > 0 {

@@ -228,7 +228,10 @@ func (b *BunSelectQuery) Scan(ctx context.Context, dest interface{}) error {
 }
 
 func (b *BunSelectQuery) Count(ctx context.Context) (int, error) {
-	count, err := b.query.Count(ctx)
+	// Use ColumnExpr with Scan instead of Count() to avoid requiring a model
+	// This works with just Table() set and avoids "Model(nil)" error
+	var count int
+	err := b.query.ColumnExpr("count(*)").Scan(ctx, &count)
 	return count, err
 }
 
