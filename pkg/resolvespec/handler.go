@@ -165,13 +165,10 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		return
 	}
 
-	// Create a pointer to the model type for database operations
-	modelPtr := reflect.New(modelType).Interface()
-
 	logger.Info("Reading records from %s.%s", schema, entity)
 
-	query := h.db.NewSelect().Model(modelPtr)
-	query = query.Table(tableName)
+	// Use Table() with the resolved table name (don't use Model() as it would add the table twice)
+	query := h.db.NewSelect().Table(tableName)
 
 	// Apply column selection
 	if len(options.Columns) > 0 {
