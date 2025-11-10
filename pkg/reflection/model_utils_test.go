@@ -1,4 +1,4 @@
-package database
+package reflection
 
 import (
 	"testing"
@@ -137,9 +137,9 @@ func TestExtractColumnFromGormTag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractColumnFromGormTag(tt.tag)
+			result := ExtractColumnFromGormTag(tt.tag)
 			if result != tt.expected {
-				t.Errorf("extractColumnFromGormTag() = %v, want %v", result, tt.expected)
+				t.Errorf("ExtractColumnFromGormTag() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
@@ -170,9 +170,9 @@ func TestExtractColumnFromBunTag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractColumnFromBunTag(tt.tag)
+			result := ExtractColumnFromBunTag(tt.tag)
 			if result != tt.expected {
-				t.Errorf("extractColumnFromBunTag() = %v, want %v", result, tt.expected)
+				t.Errorf("ExtractColumnFromBunTag() = %v, want %v", result, tt.expected)
 			}
 		})
 	}

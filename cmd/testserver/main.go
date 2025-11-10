@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -21,8 +20,8 @@ import (
 
 func main() {
 	// Initialize logger
-	fmt.Println("ResolveSpec test server starting")
 	logger.Init(true)
+	logger.Info("ResolveSpec test server starting")
 
 	// Initialize database
 	db, err := initDB()

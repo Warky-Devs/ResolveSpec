@@ -83,7 +83,7 @@ func TestSetup(m *testing.M) int {
 	router := setupTestRouter(testDB)
 	testServer = httptest.NewServer(router)
 
-	fmt.Printf("ResolveSpec test server starting on  %s\n", testServer.URL)
+	logger.Info("ResolveSpec test server starting on  %s", testServer.URL)
 	testServerURL = testServer.URL
 
 	defer testServer.Close()

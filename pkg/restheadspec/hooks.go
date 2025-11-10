@@ -27,6 +27,9 @@ const (
 	// Delete operation hooks
 	BeforeDelete HookType = "before_delete"
 	AfterDelete  HookType = "after_delete"
+
+	// Scan/Execute operation hooks
+	BeforeScan HookType = "before_scan"
 )
 
 // HookContext contains all the data available to a hook
@@ -45,6 +48,10 @@ type HookContext struct {
 	Result      interface{} // For after hooks
 	Error       error       // For after hooks
 	QueryFilter string      // For read operations
+
+	// Query chain - allows hooks to modify the query before execution
+	// Can be SelectQuery, InsertQuery, UpdateQuery, or DeleteQuery
+	Query interface{}
 
 	// Response writer - allows hooks to modify response
 	Writer common.ResponseWriter

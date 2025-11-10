@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/bitechdev/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/logger"
 )
 
 // CursorDirection defines pagination direction
@@ -85,7 +86,7 @@ func (opts *ExtendedRequestOptions) GetCursorFilter(
 			field, prefix, tableName, modelColumns,
 		)
 		if err != nil {
-			fmt.Printf("WARN: Skipping invalid sort column %q: %v\n", col, err)
+			logger.Warn("Skipping invalid sort column %q: %v", col, err)
 			continue
 		}
 

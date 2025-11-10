@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/bitechdev/ResolveSpec/pkg/common"
-	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/database"
 	"github.com/bitechdev/ResolveSpec/pkg/logger"
+	"github.com/bitechdev/ResolveSpec/pkg/reflection"
 )
 
 // Handler handles API requests using database and model abstractions
@@ -343,10 +343,10 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		logger.Debug("Applying cursor pagination")
 
 		// Get primary key name
-		pkName := database.GetPrimaryKeyName(model)
+		pkName := reflection.GetPrimaryKeyName(model)
 
 		// Extract model columns for validation using the generic database function
-		modelColumns := database.GetModelColumns(model)
+		modelColumns := reflection.GetModelColumns(model)
 
 		// Build expand joins map (if needed in future)
 		var expandJoins map[string]string
@@ -371,6 +371,19 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		}
 	}
 
+	// Execute BeforeScan hooks - pass query chain so hooks can modify it
+	hookCtx.Query = query
+	if err := h.hooks.Execute(BeforeScan, hookCtx); err != nil {
+		logger.Error("BeforeScan hook failed: %v", err)
+		h.sendError(w, http.StatusBadRequest, "hook_error", "Hook execution failed", err)
+		return
+	}
+
+	// Use potentially modified query from hook context
+	if modifiedQuery, ok := hookCtx.Query.(common.SelectQuery); ok {
+		query = modifiedQuery
+	}
+
 	// Execute query - modelPtr was already created earlier
 	if err := query.Scan(ctx, modelPtr); err != nil {
 		logger.Error("Error executing query: %v", err)
@@ -387,12 +400,32 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		offset = *options.Offset
 	}
 
+	// Set row numbers on each record if the model has a RowNumber field
+	h.setRowNumbersOnRecords(modelPtr, offset)
+
 	metadata := &common.Metadata{
 		Total:    int64(total),
 		Count:    int64(common.Len(modelPtr)),
 		Filtered: int64(total),
 		Limit:    limit,
 		Offset:   offset,
+	}
+
+	// Fetch row number for a specific record if requested
+	if options.RequestOptions.FetchRowNumber != nil && *options.RequestOptions.FetchRowNumber != "" {
+		pkName := reflection.GetPrimaryKeyName(model)
+		pkValue := *options.RequestOptions.FetchRowNumber
+
+		logger.Debug("Fetching row number for specific PK %s = %s", pkName, pkValue)
+
+		rowNum, err := h.FetchRowNumber(ctx, tableName, pkName, pkValue, options, model)
+		if err != nil {
+			logger.Warn("Failed to fetch row number: %v", err)
+			// Don't fail the entire request, just log the warning
+		} else {
+			metadata.RowNumber = &rowNum
+			logger.Debug("Row number for PK %s: %d", pkValue, rowNum)
+		}
 	}
 
 	// Execute AfterRead hooks
@@ -466,6 +499,29 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 				}
 
 				query := tx.NewInsert().Model(modelValue).Table(tableName)
+
+				// Execute BeforeScan hooks - pass query chain so hooks can modify it
+				batchHookCtx := &HookContext{
+					Context:   ctx,
+					Handler:   h,
+					Schema:    schema,
+					Entity:    entity,
+					TableName: tableName,
+					Model:     model,
+					Options:   options,
+					Data:      modelValue,
+					Writer:    w,
+					Query:     query,
+				}
+				if err := h.hooks.Execute(BeforeScan, batchHookCtx); err != nil {
+					return fmt.Errorf("BeforeScan hook failed: %w", err)
+				}
+
+				// Use potentially modified query from hook context
+				if modifiedQuery, ok := batchHookCtx.Query.(common.InsertQuery); ok {
+					query = modifiedQuery
+				}
+
 				if _, err := query.Exec(ctx); err != nil {
 					return fmt.Errorf("failed to insert record: %w", err)
 				}
@@ -508,6 +564,21 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 	}
 
 	query := h.db.NewInsert().Model(modelValue).Table(tableName)
+
+	// Execute BeforeScan hooks - pass query chain so hooks can modify it
+	hookCtx.Data = modelValue
+	hookCtx.Query = query
+	if err := h.hooks.Execute(BeforeScan, hookCtx); err != nil {
+		logger.Error("BeforeScan hook failed: %v", err)
+		h.sendError(w, http.StatusBadRequest, "hook_error", "Hook execution failed", err)
+		return
+	}
+
+	// Use potentially modified query from hook context
+	if modifiedQuery, ok := hookCtx.Query.(common.InsertQuery); ok {
+		query = modifiedQuery
+	}
+
 	if _, err := query.Exec(ctx); err != nil {
 		logger.Error("Error creating record: %v", err)
 		h.sendError(w, http.StatusInternalServerError, "create_error", "Error creating record", err)
@@ -593,6 +664,19 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 		return
 	}
 
+	// Execute BeforeScan hooks - pass query chain so hooks can modify it
+	hookCtx.Query = query
+	if err := h.hooks.Execute(BeforeScan, hookCtx); err != nil {
+		logger.Error("BeforeScan hook failed: %v", err)
+		h.sendError(w, http.StatusBadRequest, "hook_error", "Hook execution failed", err)
+		return
+	}
+
+	// Use potentially modified query from hook context
+	if modifiedQuery, ok := hookCtx.Query.(common.UpdateQuery); ok {
+		query = modifiedQuery
+	}
+
 	result, err := query.Exec(ctx)
 	if err != nil {
 		logger.Error("Error updating record: %v", err)
@@ -657,6 +741,19 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 	}
 
 	query = query.Where("id = ?", id)
+
+	// Execute BeforeScan hooks - pass query chain so hooks can modify it
+	hookCtx.Query = query
+	if err := h.hooks.Execute(BeforeScan, hookCtx); err != nil {
+		logger.Error("BeforeScan hook failed: %v", err)
+		h.sendError(w, http.StatusBadRequest, "hook_error", "Hook execution failed", err)
+		return
+	}
+
+	// Use potentially modified query from hook context
+	if modifiedQuery, ok := hookCtx.Query.(common.DeleteQuery); ok {
+		query = modifiedQuery
+	}
 
 	result, err := query.Exec(ctx)
 	if err != nil {
@@ -997,6 +1094,191 @@ func (h *Handler) sendError(w common.ResponseWriter, statusCode int, code, messa
 	}
 	w.WriteHeader(statusCode)
 	w.WriteJSON(response)
+}
+
+// FetchRowNumber calculates the row number of a specific record based on sorting and filtering
+// Returns the 1-based row number of the record with the given primary key value
+func (h *Handler) FetchRowNumber(ctx context.Context, tableName string, pkName string, pkValue string, options ExtendedRequestOptions, model any) (int64, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("Panic during FetchRowNumber: %v", r)
+		}
+	}()
+
+	// Build the sort order SQL
+	sortSQL := ""
+	if len(options.Sort) > 0 {
+		sortParts := make([]string, 0, len(options.Sort))
+		for _, sort := range options.Sort {
+			direction := "ASC"
+			if strings.ToLower(sort.Direction) == "desc" {
+				direction = "DESC"
+			}
+			sortParts = append(sortParts, fmt.Sprintf("%s.%s %s", tableName, sort.Column, direction))
+		}
+		sortSQL = strings.Join(sortParts, ", ")
+	} else {
+		// Default sort by primary key
+		sortSQL = fmt.Sprintf("%s.%s ASC", tableName, pkName)
+	}
+
+	// Build WHERE clauses from filters
+	whereClauses := make([]string, 0)
+	for i := range options.Filters {
+		filter := &options.Filters[i]
+		whereClause := h.buildFilterSQL(filter, tableName)
+		if whereClause != "" {
+			whereClauses = append(whereClauses, fmt.Sprintf("(%s)", whereClause))
+		}
+	}
+
+	// Combine WHERE clauses
+	whereSQL := ""
+	if len(whereClauses) > 0 {
+		whereSQL = "WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Add custom SQL WHERE if provided
+	if options.CustomSQLWhere != "" {
+		if whereSQL == "" {
+			whereSQL = "WHERE " + options.CustomSQLWhere
+		} else {
+			whereSQL += " AND (" + options.CustomSQLWhere + ")"
+		}
+	}
+
+	// Build JOIN clauses from Expand options
+	joinSQL := ""
+	if len(options.Expand) > 0 {
+		joinParts := make([]string, 0, len(options.Expand))
+		for _, expand := range options.Expand {
+			// Note: This is a simplified join - in production you'd need proper FK mapping
+			joinParts = append(joinParts, fmt.Sprintf("LEFT JOIN %s ON %s.%s_id = %s.id",
+				expand.Relation, tableName, expand.Relation, expand.Relation))
+		}
+		joinSQL = strings.Join(joinParts, "\n")
+	}
+
+	// Build the final query with parameterized PK value
+	queryStr := fmt.Sprintf(`
+		SELECT search.rn
+		FROM (
+			SELECT %[1]s.%[2]s,
+				ROW_NUMBER() OVER(ORDER BY %[3]s) AS rn
+			FROM %[1]s
+			%[5]s
+			%[4]s
+		) search
+		WHERE search.%[2]s = ?
+	`,
+		tableName,   // [1] - table name
+		pkName,      // [2] - primary key column name
+		sortSQL,     // [3] - sort order SQL
+		whereSQL,    // [4] - WHERE clause
+		joinSQL,     // [5] - JOIN clauses
+	)
+
+	logger.Debug("FetchRowNumber query: %s, pkValue: %s", queryStr, pkValue)
+
+	// Execute the raw query with parameterized PK value
+	var result []struct {
+		RN int64 `bun:"rn"`
+	}
+	err := h.db.Query(ctx, &result, queryStr, pkValue)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch row number: %w", err)
+	}
+
+	if len(result) == 0 {
+		return 0, fmt.Errorf("no row found for primary key %s", pkValue)
+	}
+
+	return result[0].RN, nil
+}
+
+// buildFilterSQL converts a filter to SQL WHERE clause string
+func (h *Handler) buildFilterSQL(filter *common.FilterOption, tableName string) string {
+	qualifiedColumn := h.qualifyColumnName(filter.Column, tableName)
+
+	switch strings.ToLower(filter.Operator) {
+	case "eq", "equals":
+		return fmt.Sprintf("%s = '%v'", qualifiedColumn, filter.Value)
+	case "neq", "not_equals", "ne":
+		return fmt.Sprintf("%s != '%v'", qualifiedColumn, filter.Value)
+	case "gt", "greater_than":
+		return fmt.Sprintf("%s > '%v'", qualifiedColumn, filter.Value)
+	case "gte", "greater_than_equals", "ge":
+		return fmt.Sprintf("%s >= '%v'", qualifiedColumn, filter.Value)
+	case "lt", "less_than":
+		return fmt.Sprintf("%s < '%v'", qualifiedColumn, filter.Value)
+	case "lte", "less_than_equals", "le":
+		return fmt.Sprintf("%s <= '%v'", qualifiedColumn, filter.Value)
+	case "like":
+		return fmt.Sprintf("%s LIKE '%v'", qualifiedColumn, filter.Value)
+	case "ilike":
+		return fmt.Sprintf("%s ILIKE '%v'", qualifiedColumn, filter.Value)
+	case "in":
+		if values, ok := filter.Value.([]any); ok {
+			valueStrs := make([]string, len(values))
+			for i, v := range values {
+				valueStrs[i] = fmt.Sprintf("'%v'", v)
+			}
+			return fmt.Sprintf("%s IN (%s)", qualifiedColumn, strings.Join(valueStrs, ", "))
+		}
+		return ""
+	case "is_null", "isnull":
+		return fmt.Sprintf("(%s IS NULL OR %s = '')", qualifiedColumn, qualifiedColumn)
+	case "is_not_null", "isnotnull":
+		return fmt.Sprintf("(%s IS NOT NULL AND %s != '')", qualifiedColumn, qualifiedColumn)
+	default:
+		logger.Warn("Unknown filter operator in buildFilterSQL: %s", filter.Operator)
+		return ""
+	}
+}
+
+// setRowNumbersOnRecords sets the RowNumber field on each record if it exists
+// The row number is calculated as offset + index + 1 (1-based)
+func (h *Handler) setRowNumbersOnRecords(records any, offset int) {
+	// Get the reflect value of the records
+	recordsValue := reflect.ValueOf(records)
+	if recordsValue.Kind() == reflect.Ptr {
+		recordsValue = recordsValue.Elem()
+	}
+
+	// Ensure it's a slice
+	if recordsValue.Kind() != reflect.Slice {
+		logger.Debug("setRowNumbersOnRecords: records is not a slice, skipping")
+		return
+	}
+
+	// Iterate through each record
+	for i := 0; i < recordsValue.Len(); i++ {
+		record := recordsValue.Index(i)
+
+		// Dereference if it's a pointer
+		if record.Kind() == reflect.Ptr {
+			if record.IsNil() {
+				continue
+			}
+			record = record.Elem()
+		}
+
+		// Ensure it's a struct
+		if record.Kind() != reflect.Struct {
+			continue
+		}
+
+		// Try to find and set the RowNumber field
+		rowNumberField := record.FieldByName("RowNumber")
+		if rowNumberField.IsValid() && rowNumberField.CanSet() {
+			// Check if the field is of type int64
+			if rowNumberField.Kind() == reflect.Int64 {
+				rowNum := int64(offset + i + 1)
+				rowNumberField.SetInt(rowNum)
+				logger.Debug("Set RowNumber=%d on record %d", rowNum, i)
+			}
+		}
+	}
 }
 
 // filterExtendedOptions filters all column references, removing invalid ones and logging warnings

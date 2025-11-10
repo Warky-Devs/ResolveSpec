@@ -72,11 +72,12 @@ type Response struct {
 }
 
 type Metadata struct {
-	Total    int64 `json:"total"`
-	Count    int64 `json:"count"`
-	Filtered int64 `json:"filtered"`
-	Limit    int   `json:"limit"`
-	Offset   int   `json:"offset"`
+	Total     int64  `json:"total"`
+	Count     int64  `json:"count"`
+	Filtered  int64  `json:"filtered"`
+	Limit     int    `json:"limit"`
+	Offset    int    `json:"offset"`
+	RowNumber *int64 `json:"row_number,omitempty"`
 }
 
 type APIError struct {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime/debug"
 
 	"go.uber.org/zap"
 )
@@ -69,4 +70,36 @@ func Debug(template string, args ...interface{}) {
 		return
 	}
 	Logger.Debugw(fmt.Sprintf(template, args...), "process_id", os.Getpid())
+}
+
+// CatchPanic - Handle panic
+func CatchPanicCallback(location string, cb func(err any)) {
+	if err := recover(); err != nil {
+		//callstack := debug.Stack()
+
+		if Logger != nil {
+			Error("Panic in %s : %v", location, err)
+		} else {
+			fmt.Printf("%s:PANIC->%+v", location, err)
+			debug.PrintStack()
+		}
+
+		//push to sentry
+		// hub := sentry.CurrentHub()
+		// if hub != nil {
+		// 	evtID := hub.Recover(err)
+		// 	if evtID != nil {
+		// 		sentry.Flush(time.Second * 2)
+		// 	}
+		// }
+
+		if cb != nil {
+			cb(err)
+		}
+	}
+}
+
+// CatchPanic - Handle panic
+func CatchPanic(location string) {
+	CatchPanicCallback(location, nil)
 }
