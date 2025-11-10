@@ -18,6 +18,11 @@ type RequestOptions struct {
 	CustomOperators []CustomOperator `json:"customOperators"`
 	ComputedColumns []ComputedColumn `json:"computedColumns"`
 	Parameters      []Parameter      `json:"parameters"`
+
+	// Cursor pagination
+	CursorForward  string  `json:"cursor_forward"`
+	CursorBackward string  `json:"cursor_backward"`
+	FetchRowNumber *string `json:"fetch_row_number"`
 }
 
 type Parameter struct {
@@ -68,6 +73,7 @@ type Response struct {
 
 type Metadata struct {
 	Total    int64 `json:"total"`
+	Count    int64 `json:"count"`
 	Filtered int64 `json:"filtered"`
 	Limit    int   `json:"limit"`
 	Offset   int   `json:"offset"`

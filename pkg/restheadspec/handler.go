@@ -339,7 +339,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	}
 
 	// Apply cursor-based pagination
-	if len(options.CursorForward) > 0 || len(options.CursorBackward) > 0 {
+	if len(options.RequestOptions.CursorForward) > 0 || len(options.RequestOptions.CursorBackward) > 0 {
 		logger.Debug("Applying cursor pagination")
 
 		// Get primary key name
@@ -389,6 +389,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 
 	metadata := &common.Metadata{
 		Total:    int64(total),
+		Count:    int64(common.Len(modelPtr)),
 		Filtered: int64(total),
 		Limit:    limit,
 		Offset:   offset,
@@ -937,7 +938,12 @@ func (h *Handler) sendFormattedResponse(w common.ResponseWriter, data interface{
 	if options.CleanJSON {
 		data = h.cleanJSON(data)
 	}
+
 	w.SetHeader("Content-Type", "application/json")
+	w.SetHeader("Content-Range", fmt.Sprintf("%d-%d/%d", metadata.Offset, int64(metadata.Offset)+metadata.Count, metadata.Filtered))
+	w.SetHeader("X-Api-Range-Total", fmt.Sprintf("%d", metadata.Filtered))
+	w.SetHeader("X-Api-Range-Size", fmt.Sprintf("%d", metadata.Count))
+
 	// Format response based on response format option
 	switch options.ResponseFormat {
 	case "simple":

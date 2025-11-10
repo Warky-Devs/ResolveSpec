@@ -28,23 +28,18 @@ type ExtendedRequestOptions struct {
 	Expand []ExpandOption
 
 	// Advanced features
-	AdvancedSQL    map[string]string // Column -> SQL expression
-	ComputedQL     map[string]string // Column -> CQL expression
-	Distinct       bool
-	SkipCount      bool
-	SkipCache      bool
-	FetchRowNumber *string
-	PKRow          *string
+	AdvancedSQL map[string]string // Column -> SQL expression
+	ComputedQL  map[string]string // Column -> CQL expression
+	Distinct    bool
+	SkipCount   bool
+	SkipCache   bool
+	PKRow       *string
 
 	// Response format
 	ResponseFormat string // "simple", "detail", "syncfusion"
 
 	// Transaction
 	AtomicTransaction bool
-
-	// Cursor pagination
-	CursorForward  string
-	CursorBackward string
 }
 
 // ExpandOption represents a relation expansion configuration
@@ -171,9 +166,9 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 				options.Offset = &offset
 			}
 		case strings.HasPrefix(normalizedKey, "x-cursor-forward"):
-			options.CursorForward = decodedValue
+			options.RequestOptions.CursorForward = decodedValue
 		case strings.HasPrefix(normalizedKey, "x-cursor-backward"):
-			options.CursorBackward = decodedValue
+			options.RequestOptions.CursorBackward = decodedValue
 
 		// Advanced Features
 		case strings.HasPrefix(normalizedKey, "x-advsql-"):
@@ -189,7 +184,7 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 		case strings.HasPrefix(normalizedKey, "x-skipcache"):
 			options.SkipCache = strings.ToLower(decodedValue) == "true"
 		case strings.HasPrefix(normalizedKey, "x-fetch-rownumber"):
-			options.FetchRowNumber = &decodedValue
+			options.RequestOptions.FetchRowNumber = &decodedValue
 		case strings.HasPrefix(normalizedKey, "x-pkrow"):
 			options.PKRow = &decodedValue
 

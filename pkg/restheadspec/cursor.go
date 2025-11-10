@@ -31,7 +31,9 @@ func (opts *ExtendedRequestOptions) GetCursorFilter(
 	modelColumns []string, // optional: for validation
 	expandJoins map[string]string, // optional: alias → JOIN SQL
 ) (string, error) {
-
+	if strings.Contains(tableName, ".") {
+		tableName = strings.SplitN(tableName, ".", 2)[1]
+	}
 	// --------------------------------------------------------------------- //
 	// 1. Determine active cursor
 	// --------------------------------------------------------------------- //
@@ -137,11 +139,11 @@ func (opts *ExtendedRequestOptions) GetCursorFilter(
 // ------------------------------------------------------------------------- //
 // Helper: get active cursor (forward or backward)
 func (opts *ExtendedRequestOptions) getActiveCursor() (id string, direction CursorDirection) {
-	if opts.CursorForward != "" {
-		return opts.CursorForward, CursorForward
+	if opts.RequestOptions.CursorForward != "" {
+		return opts.RequestOptions.CursorForward, CursorForward
 	}
-	if opts.CursorBackward != "" {
-		return opts.CursorBackward, CursorBackward
+	if opts.RequestOptions.CursorBackward != "" {
+		return opts.RequestOptions.CursorBackward, CursorBackward
 	}
 	return "", 0
 }
