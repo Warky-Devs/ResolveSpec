@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/common"
-	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
+	"github.com/bitechdev/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/logger"
 )
 
 // HookType defines the type of hook to execute

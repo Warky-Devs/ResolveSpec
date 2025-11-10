@@ -4,12 +4,13 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/common"
 )
 
 // parseTableName splits a table name that may contain schema into separate schema and table
 // For example: "public.users" -> ("public", "users")
-//              "users" -> ("", "users")
+//
+//	"users" -> ("", "users")
 func parseTableName(fullTableName string) (schema, table string) {
 	if idx := strings.LastIndex(fullTableName, "."); idx != -1 {
 		return fullTableName[:idx], fullTableName[idx+1:]

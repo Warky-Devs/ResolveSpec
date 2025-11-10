@@ -3,7 +3,7 @@ package testmodels
 import (
 	"time"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/modelregistry"
+	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
 )
 
 // Department represents a company department

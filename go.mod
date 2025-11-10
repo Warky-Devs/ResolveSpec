@@ -1,4 +1,4 @@
-module github.com/Warky-Devs/ResolveSpec
+module github.com/bitechdev/ResolveSpec
 
 go 1.23.0
 

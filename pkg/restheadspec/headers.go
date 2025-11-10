@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/common"
-	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
+	"github.com/bitechdev/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/logger"
 )
 
 // ExtendedRequestOptions extends common.RequestOptions with additional features

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/common"
 )
 
 // CursorDirection defines pagination direction

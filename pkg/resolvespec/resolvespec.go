@@ -3,9 +3,9 @@ package resolvespec
 import (
 	"net/http"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/common/adapters/database"
-	"github.com/Warky-Devs/ResolveSpec/pkg/common/adapters/router"
-	"github.com/Warky-Devs/ResolveSpec/pkg/modelregistry"
+	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/database"
+	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/router"
+	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
 	"github.com/gorilla/mux"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bunrouter"

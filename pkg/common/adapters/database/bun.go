@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/common"
 	"github.com/uptrace/bun"
 )
 
@@ -192,7 +192,7 @@ func (b *BunSelectQuery) LeftJoin(query string, args ...interface{}) common.Sele
 		}
 	}
 
-	b.query = b.query.Join("LEFT JOIN " + joinClause, sqlArgs...)
+	b.query = b.query.Join("LEFT JOIN "+joinClause, sqlArgs...)
 	return b
 }
 

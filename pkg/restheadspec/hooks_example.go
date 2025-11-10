@@ -3,7 +3,7 @@ package restheadspec
 import (
 	"fmt"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
+	"github.com/bitechdev/ResolveSpec/pkg/logger"
 )
 
 // This file contains example implementations showing how to use hooks

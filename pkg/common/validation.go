@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
+	"github.com/bitechdev/ResolveSpec/pkg/logger"
 )
 
 // ColumnValidator validates column names against a model's fields

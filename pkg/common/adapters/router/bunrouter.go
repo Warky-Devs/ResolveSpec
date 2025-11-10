@@ -3,7 +3,7 @@ package router
 import (
 	"net/http"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/common"
 	"github.com/uptrace/bunrouter"
 )
 
@@ -190,4 +190,3 @@ func DefaultBunRouterConfig() *BunRouterConfig {
 		HandleOPTIONS:          true,
 	}
 }
-

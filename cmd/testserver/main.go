@@ -7,11 +7,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
-	"github.com/Warky-Devs/ResolveSpec/pkg/modelregistry"
-	"github.com/Warky-Devs/ResolveSpec/pkg/testmodels"
+	"github.com/bitechdev/ResolveSpec/pkg/logger"
+	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
+	"github.com/bitechdev/ResolveSpec/pkg/testmodels"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/resolvespec"
+	"github.com/bitechdev/ResolveSpec/pkg/resolvespec"
 	"github.com/gorilla/mux"
 
 	"github.com/glebarez/sqlite"

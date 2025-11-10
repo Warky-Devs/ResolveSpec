@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/common"
 	"github.com/gorilla/mux"
 )
 

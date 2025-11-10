@@ -9,8 +9,8 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/Warky-Devs/ResolveSpec/pkg/common"
-	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
+	"github.com/bitechdev/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/logger"
 )
 
 // Handler handles API requests using database and model abstractions
