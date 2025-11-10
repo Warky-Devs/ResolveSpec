@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Warky-Devs/ResolveSpec/pkg/common"
+	"github.com/Warky-Devs/ResolveSpec/pkg/common/adapters/database"
 	"github.com/Warky-Devs/ResolveSpec/pkg/logger"
 )
 
@@ -18,6 +19,7 @@ import (
 type Handler struct {
 	db       common.Database
 	registry common.ModelRegistry
+	hooks    *HookRegistry
 }
 
 // NewHandler creates a new API handler with database and registry abstractions
@@ -25,7 +27,14 @@ func NewHandler(db common.Database, registry common.ModelRegistry) *Handler {
 	return &Handler{
 		db:       db,
 		registry: registry,
+		hooks:    NewHookRegistry(),
 	}
+}
+
+// Hooks returns the hook registry for this handler
+// Use this to register custom hooks for operations
+func (h *Handler) Hooks() *HookRegistry {
+	return h.hooks
 }
 
 // handlePanic is a helper function to handle panics with stack traces
@@ -184,6 +193,25 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	tableName := GetTableName(ctx)
 	model := GetModel(ctx)
 
+	// Execute BeforeRead hooks
+	hookCtx := &HookContext{
+		Context:   ctx,
+		Handler:   h,
+		Schema:    schema,
+		Entity:    entity,
+		TableName: tableName,
+		Model:     model,
+		Options:   options,
+		ID:        id,
+		Writer:    w,
+	}
+
+	if err := h.hooks.Execute(BeforeRead, hookCtx); err != nil {
+		logger.Error("BeforeRead hook failed: %v", err)
+		h.sendError(w, http.StatusBadRequest, "hook_error", "Hook execution failed", err)
+		return
+	}
+
 	// Validate and unwrap model type to get base struct
 	modelType := reflect.TypeOf(model)
 	for modelType != nil && (modelType.Kind() == reflect.Ptr || modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array) {
@@ -310,6 +338,39 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		query = query.Offset(*options.Offset)
 	}
 
+	// Apply cursor-based pagination
+	if len(options.CursorForward) > 0 || len(options.CursorBackward) > 0 {
+		logger.Debug("Applying cursor pagination")
+
+		// Get primary key name
+		pkName := database.GetPrimaryKeyName(model)
+
+		// Extract model columns for validation using the generic database function
+		modelColumns := database.GetModelColumns(model)
+
+		// Build expand joins map (if needed in future)
+		var expandJoins map[string]string
+		if len(options.Expand) > 0 {
+			expandJoins = make(map[string]string)
+			// TODO: Build actual JOIN SQL for each expand relation
+			// For now, pass empty map as joins are handled via Preload
+		}
+
+		// Get cursor filter SQL
+		cursorFilter, err := options.GetCursorFilter(tableName, pkName, modelColumns, expandJoins)
+		if err != nil {
+			logger.Error("Error building cursor filter: %v", err)
+			h.sendError(w, http.StatusBadRequest, "cursor_error", "Invalid cursor pagination", err)
+			return
+		}
+
+		// Apply cursor filter to query
+		if cursorFilter != "" {
+			logger.Debug("Applying cursor filter: %s", cursorFilter)
+			query = query.Where(cursorFilter)
+		}
+	}
+
 	// Execute query - modelPtr was already created earlier
 	if err := query.Scan(ctx, modelPtr); err != nil {
 		logger.Error("Error executing query: %v", err)
@@ -333,6 +394,16 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		Offset:   offset,
 	}
 
+	// Execute AfterRead hooks
+	hookCtx.Result = modelPtr
+	hookCtx.Error = nil
+
+	if err := h.hooks.Execute(AfterRead, hookCtx); err != nil {
+		logger.Error("AfterRead hook failed: %v", err)
+		h.sendError(w, http.StatusInternalServerError, "hook_error", "Hook execution failed", err)
+		return
+	}
+
 	h.sendFormattedResponse(w, modelPtr, metadata, options)
 }
 
@@ -350,6 +421,28 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 	model := GetModel(ctx)
 
 	logger.Info("Creating record in %s.%s", schema, entity)
+
+	// Execute BeforeCreate hooks
+	hookCtx := &HookContext{
+		Context:   ctx,
+		Handler:   h,
+		Schema:    schema,
+		Entity:    entity,
+		TableName: tableName,
+		Model:     model,
+		Options:   options,
+		Data:      data,
+		Writer:    w,
+	}
+
+	if err := h.hooks.Execute(BeforeCreate, hookCtx); err != nil {
+		logger.Error("BeforeCreate hook failed: %v", err)
+		h.sendError(w, http.StatusBadRequest, "hook_error", "Hook execution failed", err)
+		return
+	}
+
+	// Use potentially modified data from hook context
+	data = hookCtx.Data
 
 	// Handle batch creation
 	dataValue := reflect.ValueOf(data)
@@ -385,6 +478,16 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 			return
 		}
 
+		// Execute AfterCreate hooks for batch creation
+		hookCtx.Result = map[string]interface{}{"created": dataValue.Len()}
+		hookCtx.Error = nil
+
+		if err := h.hooks.Execute(AfterCreate, hookCtx); err != nil {
+			logger.Error("AfterCreate hook failed: %v", err)
+			h.sendError(w, http.StatusInternalServerError, "hook_error", "Hook execution failed", err)
+			return
+		}
+
 		h.sendResponse(w, map[string]interface{}{"created": dataValue.Len()}, nil)
 		return
 	}
@@ -410,6 +513,16 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 		return
 	}
 
+	// Execute AfterCreate hooks for single record creation
+	hookCtx.Result = modelValue
+	hookCtx.Error = nil
+
+	if err := h.hooks.Execute(AfterCreate, hookCtx); err != nil {
+		logger.Error("AfterCreate hook failed: %v", err)
+		h.sendError(w, http.StatusInternalServerError, "hook_error", "Hook execution failed", err)
+		return
+	}
+
 	h.sendResponse(w, modelValue, nil)
 }
 
@@ -424,8 +537,32 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 	schema := GetSchema(ctx)
 	entity := GetEntity(ctx)
 	tableName := GetTableName(ctx)
+	model := GetModel(ctx)
 
 	logger.Info("Updating record in %s.%s", schema, entity)
+
+	// Execute BeforeUpdate hooks
+	hookCtx := &HookContext{
+		Context:   ctx,
+		Handler:   h,
+		Schema:    schema,
+		Entity:    entity,
+		TableName: tableName,
+		Model:     model,
+		Options:   options,
+		ID:        id,
+		Data:      data,
+		Writer:    w,
+	}
+
+	if err := h.hooks.Execute(BeforeUpdate, hookCtx); err != nil {
+		logger.Error("BeforeUpdate hook failed: %v", err)
+		h.sendError(w, http.StatusBadRequest, "hook_error", "Hook execution failed", err)
+		return
+	}
+
+	// Use potentially modified data from hook context
+	data = hookCtx.Data
 
 	// Convert data to map
 	dataMap, ok := data.(map[string]interface{})
@@ -462,9 +599,20 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 		return
 	}
 
-	h.sendResponse(w, map[string]interface{}{
+	// Execute AfterUpdate hooks
+	responseData := map[string]interface{}{
 		"updated": result.RowsAffected(),
-	}, nil)
+	}
+	hookCtx.Result = responseData
+	hookCtx.Error = nil
+
+	if err := h.hooks.Execute(AfterUpdate, hookCtx); err != nil {
+		logger.Error("AfterUpdate hook failed: %v", err)
+		h.sendError(w, http.StatusInternalServerError, "hook_error", "Hook execution failed", err)
+		return
+	}
+
+	h.sendResponse(w, responseData, nil)
 }
 
 func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id string) {
@@ -478,8 +626,27 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 	schema := GetSchema(ctx)
 	entity := GetEntity(ctx)
 	tableName := GetTableName(ctx)
+	model := GetModel(ctx)
 
 	logger.Info("Deleting record from %s.%s", schema, entity)
+
+	// Execute BeforeDelete hooks
+	hookCtx := &HookContext{
+		Context:   ctx,
+		Handler:   h,
+		Schema:    schema,
+		Entity:    entity,
+		TableName: tableName,
+		Model:     model,
+		ID:        id,
+		Writer:    w,
+	}
+
+	if err := h.hooks.Execute(BeforeDelete, hookCtx); err != nil {
+		logger.Error("BeforeDelete hook failed: %v", err)
+		h.sendError(w, http.StatusBadRequest, "hook_error", "Hook execution failed", err)
+		return
+	}
 
 	query := h.db.NewDelete().Table(tableName)
 
@@ -497,9 +664,20 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 		return
 	}
 
-	h.sendResponse(w, map[string]interface{}{
+	// Execute AfterDelete hooks
+	responseData := map[string]interface{}{
 		"deleted": result.RowsAffected(),
-	}, nil)
+	}
+	hookCtx.Result = responseData
+	hookCtx.Error = nil
+
+	if err := h.hooks.Execute(AfterDelete, hookCtx); err != nil {
+		logger.Error("AfterDelete hook failed: %v", err)
+		h.sendError(w, http.StatusInternalServerError, "hook_error", "Hook execution failed", err)
+		return
+	}
+
+	h.sendResponse(w, responseData, nil)
 }
 
 // qualifyColumnName ensures column name is fully qualified with table name if not already

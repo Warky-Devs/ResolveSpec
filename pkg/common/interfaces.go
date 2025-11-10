@@ -131,6 +131,11 @@ type TableNameProvider interface {
 	TableName() string
 }
 
+// PrimaryKeyNameProvider interface for models that provide primary key column names
+type PrimaryKeyNameProvider interface {
+	GetIDName() string
+}
+
 // SchemaProvider interface for models that provide schema names
 type SchemaProvider interface {
 	SchemaName() string
