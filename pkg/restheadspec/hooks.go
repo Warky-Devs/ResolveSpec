@@ -95,7 +95,7 @@ func (r *HookRegistry) RegisterMultiple(hookTypes []HookType, hook HookFunc) {
 func (r *HookRegistry) Execute(hookType HookType, ctx *HookContext) error {
 	hooks, exists := r.hooks[hookType]
 	if !exists || len(hooks) == 0 {
-		logger.Debug("No hooks registered for %s", hookType)
+		//logger.Debug("No hooks registered for %s", hookType)
 		return nil
 	}
 
@@ -108,7 +108,7 @@ func (r *HookRegistry) Execute(hookType HookType, ctx *HookContext) error {
 		}
 	}
 
-	logger.Debug("All hooks for %s executed successfully", hookType)
+	//logger.Debug("All hooks for %s executed successfully", hookType)
 	return nil
 }
 

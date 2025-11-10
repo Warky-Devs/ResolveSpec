@@ -1171,11 +1171,11 @@ func (h *Handler) FetchRowNumber(ctx context.Context, tableName string, pkName s
 		) search
 		WHERE search.%[2]s = ?
 	`,
-		tableName,   // [1] - table name
-		pkName,      // [2] - primary key column name
-		sortSQL,     // [3] - sort order SQL
-		whereSQL,    // [4] - WHERE clause
-		joinSQL,     // [5] - JOIN clauses
+		tableName, // [1] - table name
+		pkName,    // [2] - primary key column name
+		sortSQL,   // [3] - sort order SQL
+		whereSQL,  // [4] - WHERE clause
+		joinSQL,   // [5] - JOIN clauses
 	)
 
 	logger.Debug("FetchRowNumber query: %s, pkValue: %s", queryStr, pkValue)
@@ -1275,7 +1275,7 @@ func (h *Handler) setRowNumbersOnRecords(records any, offset int) {
 			if rowNumberField.Kind() == reflect.Int64 {
 				rowNum := int64(offset + i + 1)
 				rowNumberField.SetInt(rowNum)
-				logger.Debug("Set RowNumber=%d on record %d", rowNum, i)
+
 			}
 		}
 	}
