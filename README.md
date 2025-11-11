@@ -729,10 +729,65 @@ func TestHandler(t *testing.T) {
 }
 ```
 
+## Continuous Integration
+
+ResolveSpec uses GitHub Actions for automated testing and quality checks. The CI pipeline runs on every push and pull request.
+
+### CI/CD Workflow
+
+The project includes automated workflows that:
+
+- **Test**: Run all tests with race detection and code coverage
+- **Lint**: Check code quality with golangci-lint
+- **Build**: Verify the project builds successfully
+- **Multi-version**: Test against multiple Go versions (1.23.x, 1.24.x)
+
+### Running Tests Locally
+
+```bash
+# Run all tests
+go test -v ./...
+
+# Run tests with coverage
+go test -v -race -coverprofile=coverage.out ./...
+
+# View coverage report
+go tool cover -html=coverage.out
+
+# Run linting
+golangci-lint run
+```
+
+### Test Files
+
+The project includes comprehensive test coverage:
+
+- **Unit Tests**: Individual component testing
+- **Integration Tests**: End-to-end API testing
+- **CRUD Tests**: Standalone tests for both ResolveSpec and RestHeadSpec APIs
+
+To run only the CRUD standalone tests:
+
+```bash
+go test -v ./tests -run TestCRUDStandalone
+```
+
+### CI Status
+
+Check the [Actions tab](../../actions) on GitHub to see the status of recent CI runs. All tests must pass before merging pull requests.
+
+### Badge
+
+Add this badge to display CI status in your fork:
+
+```markdown
+![Tests](https://github.com/bitechdev/ResolveSpec/workflows/Tests/badge.svg)
+```
+
 ## Security Considerations
 
 - Implement proper authentication and authorization
-- Validate all input parameters  
+- Validate all input parameters
 - Use prepared statements (handled by GORM/Bun/your ORM)
 - Implement rate limiting
 - Control access at schema/entity level
