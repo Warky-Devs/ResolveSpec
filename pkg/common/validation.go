@@ -183,7 +183,8 @@ func (v *ColumnValidator) ValidateRequestOptions(options RequestOptions) error {
 	}
 
 	// Validate Preload columns (if specified)
-	for _, preload := range options.Preload {
+	for idx := range options.Preload {
+		preload := options.Preload[idx]
 		// Note: We don't validate the relation name itself, as it's a relationship
 		// Only validate columns if specified for the preload
 		if err := v.ValidateColumns(preload.Columns); err != nil {
@@ -239,7 +240,8 @@ func (v *ColumnValidator) FilterRequestOptions(options RequestOptions) RequestOp
 
 	// Filter Preload columns
 	validPreloads := make([]PreloadOption, 0, len(options.Preload))
-	for _, preload := range options.Preload {
+	for idx := range options.Preload {
+		preload := options.Preload[idx]
 		filteredPreload := preload
 		filteredPreload.Columns = v.FilterValidColumns(preload.Columns)
 		filteredPreload.OmitColumns = v.FilterValidColumns(preload.OmitColumns)

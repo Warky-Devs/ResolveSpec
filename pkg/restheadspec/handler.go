@@ -260,7 +260,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 			query = query.ColumnExpr("(?) AS "+colName, colExpr)
 			for colIndex := range options.Columns {
 				if options.Columns[colIndex] == colName {
-					//Remove the computed column from the selected columns to avoid duplication
+					// Remove the computed column from the selected columns to avoid duplication
 					options.Columns = append(options.Columns[:colIndex], options.Columns[colIndex+1:]...)
 					break
 				}
@@ -274,7 +274,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 			query = query.ColumnExpr("(?) AS "+cu.Name, cu.Expression)
 			for colIndex := range options.Columns {
 				if options.Columns[colIndex] == cu.Name {
-					//Remove the computed column from the selected columns to avoid duplication
+					// Remove the computed column from the selected columns to avoid duplication
 					options.Columns = append(options.Columns[:colIndex], options.Columns[colIndex+1:]...)
 					break
 				}
@@ -305,13 +305,13 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		}
 		// Note: Expand would require JOIN implementation
 		// For now, we'll use Preload as a fallback
-		//query = query.Preload(expand.Relation)
+		// query = query.Preload(expand.Relation)
 		if options.Preload == nil {
 			options.Preload = make([]common.PreloadOption, 0)
 		}
 		skip := false
-		for _, existing := range options.Preload {
-			if existing.Relation == expand.Relation {
+		for idx := range options.Preload {
+			if options.Preload[idx].Relation == expand.Relation {
 				skip = true
 				continue
 			}
@@ -327,7 +327,8 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	}
 
 	// Apply preloading
-	for _, preload := range options.Preload {
+	for idx := range options.Preload {
+		preload := options.Preload[idx]
 		logger.Debug("Applying preload: %s", preload.Relation)
 		query = query.PreloadRelation(preload.Relation, func(sq common.SelectQuery) common.SelectQuery {
 			if len(preload.OmitColumns) > 0 {
@@ -972,7 +973,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 						continue
 					}
 
-					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
+					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), itemID)
 
 					result, err := query.Exec(ctx)
 					if err != nil {
@@ -1039,7 +1040,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 						continue
 					}
 
-					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
+					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), itemID)
 					result, err := query.Exec(ctx)
 					if err != nil {
 						return fmt.Errorf("failed to delete record %v: %w", itemID, err)
@@ -1090,7 +1091,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 							continue
 						}
 
-						query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
+						query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), itemID)
 						result, err := query.Exec(ctx)
 						if err != nil {
 							return fmt.Errorf("failed to delete record %v: %w", itemID, err)
@@ -1150,7 +1151,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 		return
 	}
 
-	query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), id)
+	query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), id)
 
 	// Execute BeforeScan hooks - pass query chain so hooks can modify it
 	hookCtx.Query = query

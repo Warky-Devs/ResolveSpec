@@ -24,21 +24,63 @@
 			"type": "go",
 			"label": "go: test workspace",
 			"command": "test",
-			
 			"options": {
-				"env": {				
-					"CGO_ENABLED": "0"
-				},
-				"cwd": "${workspaceFolder}/bin",
+				"cwd": "${workspaceFolder}"
 			},
 			"args": [
-				"../..."
+				"-v",
+				"-race",
+				"-coverprofile=coverage.out",
+				"-covermode=atomic",
+				"./..."
 			],
 			"problemMatcher": [
 				"$go"
 			],
-			"group": "build",
-			
+			"group": {
+				"kind": "test",
+				"isDefault": true
+			},
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			}
 		},
+		{
+			"type": "shell",
+			"label": "go: vet workspace",
+			"command": "go vet ./...",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$go"
+			],
+			"group": "test"
+		},
+		{
+			"type": "shell",
+			"label": "go: lint workspace",
+			"command": "golangci-lint run --timeout=5m",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"type": "shell",
+			"label": "go: full test suite",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"go: vet workspace",
+				"go: test workspace"
+			],
+			"problemMatcher": [],
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			}
+		}
 	]
 }

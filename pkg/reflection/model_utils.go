@@ -18,7 +18,7 @@ func GetPrimaryKeyName(model any) string {
 	if reflect.TypeOf(model) == nil {
 		return ""
 	}
-	//If we are given a string model name, look up the model
+	// If we are given a string model name, look up the model
 	if reflect.TypeOf(model).Kind() == reflect.String {
 		name := model.(string)
 		m, err := modelregistry.GetModelByName(name)

@@ -699,6 +699,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 	schema := GetSchema(ctx)
 	entity := GetEntity(ctx)
 	tableName := GetTableName(ctx)
+	model := GetModel(ctx)
 
 	logger.Info("Deleting records from %s.%s", schema, entity)
 
@@ -711,7 +712,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 				for _, itemID := range v {
 
-					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
+					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), itemID)
 					if _, err := query.Exec(ctx); err != nil {
 						return fmt.Errorf("failed to delete record %s: %w", itemID, err)
 					}
@@ -750,7 +751,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 						continue // Skip items without ID
 					}
 
-					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
+					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), itemID)
 					result, err := query.Exec(ctx)
 					if err != nil {
 						return fmt.Errorf("failed to delete record %v: %w", itemID, err)
@@ -775,7 +776,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 				for _, item := range v {
 					if itemID, ok := item["id"]; ok && itemID != nil {
-						query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
+						query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), itemID)
 						result, err := query.Exec(ctx)
 						if err != nil {
 							return fmt.Errorf("failed to delete record %v: %w", itemID, err)
@@ -809,7 +810,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 		return
 	}
 
-	query := h.db.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), id)
+	query := h.db.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), id)
 
 	result, err := query.Exec(ctx)
 	if err != nil {
@@ -1118,7 +1119,8 @@ func (h *Handler) applyPreloads(model interface{}, query common.SelectQuery, pre
 		return query
 	}
 
-	for _, preload := range preloads {
+	for idx := range preloads {
+		preload := preloads[idx]
 		logger.Debug("Processing preload for relation: %s", preload.Relation)
 		relInfo := h.getRelationshipInfo(modelType, preload.Relation)
 		if relInfo == nil {
