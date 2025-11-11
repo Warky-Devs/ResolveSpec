@@ -293,6 +293,9 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		logger.Debug("Applying expand: %s", expand.Relation)
 		sorts := make([]common.SortOption, 0)
 		for _, s := range strings.Split(expand.Sort, ",") {
+			if s == "" {
+				continue
+			}
 			dir := "ASC"
 			if strings.HasPrefix(s, "-") || strings.HasSuffix(strings.ToUpper(s), " DESC") {
 				dir = "DESC"
@@ -1531,6 +1534,9 @@ func (h *Handler) FetchRowNumber(ctx context.Context, tableName string, pkName s
 	if len(options.Sort) > 0 {
 		sortParts := make([]string, 0, len(options.Sort))
 		for _, sort := range options.Sort {
+			if sort.Column == "" {
+				continue
+			}
 			direction := "ASC"
 			if strings.EqualFold(sort.Direction, "desc") {
 				direction = "DESC"
