@@ -238,6 +238,10 @@ func (b *BunSelectQuery) Scan(ctx context.Context, dest interface{}) error {
 	return b.query.Scan(ctx, dest)
 }
 
+func (b *BunSelectQuery) ScanModel(ctx context.Context) error {
+	return b.query.Scan(ctx)
+}
+
 func (b *BunSelectQuery) Count(ctx context.Context) (int, error) {
 	// If Model() was set, use bun's native Count() which works properly
 	if b.hasModel {

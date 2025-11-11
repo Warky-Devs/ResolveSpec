@@ -398,7 +398,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	}
 
 	// Execute query - modelPtr was already created earlier
-	if err := query.Scan(ctx, modelPtr); err != nil {
+	if err := query.ScanModel(ctx); err != nil {
 		logger.Error("Error executing query: %v", err)
 		h.sendError(w, http.StatusInternalServerError, "query_error", "Error executing query", err)
 		return

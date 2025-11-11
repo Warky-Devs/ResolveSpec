@@ -221,6 +221,13 @@ func (g *GormSelectQuery) Scan(ctx context.Context, dest interface{}) error {
 	return g.db.WithContext(ctx).Find(dest).Error
 }
 
+func (g *GormSelectQuery) ScanModel(ctx context.Context) error {
+	if g.db.Statement.Model == nil {
+		return fmt.Errorf("ScanModel requires Model() to be set before scanning")
+	}
+	return g.db.WithContext(ctx).Find(g.db.Statement.Model).Error
+}
+
 func (g *GormSelectQuery) Count(ctx context.Context) (int, error) {
 	var count int64
 	err := g.db.WithContext(ctx).Count(&count).Error

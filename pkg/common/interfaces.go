@@ -39,6 +39,7 @@ type SelectQuery interface {
 
 	// Execution methods
 	Scan(ctx context.Context, dest interface{}) error
+	ScanModel(ctx context.Context) error
 	Count(ctx context.Context) (int, error)
 	Exists(ctx context.Context) (bool, error)
 }
