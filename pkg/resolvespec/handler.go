@@ -200,7 +200,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	if len(options.ComputedColumns) > 0 {
 		for _, cu := range options.ComputedColumns {
 			logger.Debug("Applying computed column: %s", cu.Name)
-			query = query.ColumnExpr("(?) AS "+cu.Name, cu.Expression)
+			query = query.ColumnExpr(fmt.Sprintf("(%s) AS %s", cu.Expression, cu.Name))
 		}
 	}
 
