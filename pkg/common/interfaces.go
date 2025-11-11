@@ -32,6 +32,7 @@ type SelectQuery interface {
 	Join(query string, args ...interface{}) SelectQuery
 	LeftJoin(query string, args ...interface{}) SelectQuery
 	Preload(relation string, conditions ...interface{}) SelectQuery
+	PreloadRelation(relation string, apply ...func(SelectQuery) SelectQuery) SelectQuery
 	Order(order string) SelectQuery
 	Limit(n int) SelectQuery
 	Offset(n int) SelectQuery

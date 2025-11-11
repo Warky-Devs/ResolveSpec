@@ -215,6 +215,40 @@ func (b *BunSelectQuery) Preload(relation string, conditions ...interface{}) com
 	return b
 }
 
+func (b *BunSelectQuery) PreloadRelation(relation string, apply ...func(common.SelectQuery) common.SelectQuery) common.SelectQuery {
+	b.query = b.query.Relation(relation, func(sq *bun.SelectQuery) *bun.SelectQuery {
+		if len(apply) == 0 {
+			return sq
+		}
+
+		// Wrap the incoming *bun.SelectQuery in our adapter
+		wrapper := &BunSelectQuery{
+			query: sq,
+			db:    b.db,
+		}
+
+		// Start with the interface value (not pointer)
+		current := common.SelectQuery(wrapper)
+
+		// Apply each function in sequence
+		for _, fn := range apply {
+			if fn != nil {
+				// Pass &current (pointer to interface variable), fn modifies and returns new interface value
+				modified := fn(current)
+				current = modified
+			}
+		}
+
+		// Extract the final *bun.SelectQuery
+		if finalBun, ok := current.(*BunSelectQuery); ok {
+			return finalBun.query
+		}
+
+		return sq // fallback
+	})
+	return b
+}
+
 func (b *BunSelectQuery) Order(order string) common.SelectQuery {
 	b.query = b.query.Order(order)
 	return b

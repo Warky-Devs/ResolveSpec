@@ -4,15 +4,31 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/bitechdev/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
 )
+
+type PrimaryKeyNameProvider interface {
+	GetIDName() string
+}
 
 // GetPrimaryKeyName extracts the primary key column name from a model
 // It first checks if the model implements PrimaryKeyNameProvider (GetIDName method)
 // Falls back to reflection to find bun:",pk" tag, then gorm:"primaryKey" tag
 func GetPrimaryKeyName(model any) string {
+	if reflect.TypeOf(model) == nil {
+		return ""
+	}
+	//If we are given a string model name, look up the model
+	if reflect.TypeOf(model).Kind() == reflect.String {
+		name := model.(string)
+		m, err := modelregistry.GetModelByName(name)
+		if err == nil {
+			model = m
+		}
+	}
+
 	// Check if model implements PrimaryKeyNameProvider
-	if provider, ok := model.(common.PrimaryKeyNameProvider); ok {
+	if provider, ok := model.(PrimaryKeyNameProvider); ok {
 		return provider.GetIDName()
 	}
 
@@ -22,7 +38,11 @@ func GetPrimaryKeyName(model any) string {
 	}
 
 	// Fall back to GORM tag
-	return getPrimaryKeyFromReflection(model, "gorm")
+	if pkName := getPrimaryKeyFromReflection(model, "gorm"); pkName != "" {
+		return pkName
+	}
+
+	return ""
 }
 
 // GetModelColumns extracts all column names from a model using reflection

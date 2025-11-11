@@ -197,6 +197,36 @@ func (g *GormSelectQuery) Preload(relation string, conditions ...interface{}) co
 	return g
 }
 
+func (g *GormSelectQuery) PreloadRelation(relation string, apply ...func(common.SelectQuery) common.SelectQuery) common.SelectQuery {
+	g.db = g.db.Preload(relation, func(db *gorm.DB) *gorm.DB {
+		if len(apply) == 0 {
+			return db
+		}
+
+		wrapper := &GormSelectQuery{
+			db: g.db,
+		}
+
+		current := common.SelectQuery(wrapper)
+
+		for _, fn := range apply {
+			if fn != nil {
+
+				modified := fn(current)
+				current = modified
+			}
+		}
+
+		if finalBun, ok := current.(*GormSelectQuery); ok {
+			return finalBun.db
+		}
+
+		return db // fallback
+	})
+
+	return g
+}
+
 func (g *GormSelectQuery) Order(order string) common.SelectQuery {
 	g.db = g.db.Order(order)
 	return g

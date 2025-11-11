@@ -11,6 +11,7 @@ import (
 
 	"github.com/bitechdev/ResolveSpec/pkg/common"
 	"github.com/bitechdev/ResolveSpec/pkg/logger"
+	"github.com/bitechdev/ResolveSpec/pkg/reflection"
 )
 
 // Handler handles API requests using database and model abstractions
@@ -249,7 +250,8 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		logger.Debug("Querying single record with ID: %s", id)
 		// For single record, create a new pointer to the struct type
 		singleResult := reflect.New(modelType).Interface()
-		query = query.Where("id = ?", id)
+
+		query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(singleResult))), id)
 		if err := query.Scan(ctx, singleResult); err != nil {
 			logger.Error("Error querying record: %v", err)
 			h.sendError(w, http.StatusInternalServerError, "query_error", "Error executing query", err)
@@ -521,15 +523,15 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, url
 		// Apply conditions
 		if urlID != "" {
 			logger.Debug("Updating by URL ID: %s", urlID)
-			query = query.Where("id = ?", urlID)
+			query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), urlID)
 		} else if reqID != nil {
 			switch id := reqID.(type) {
 			case string:
 				logger.Debug("Updating by request ID: %s", id)
-				query = query.Where("id = ?", id)
+				query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), id)
 			case []string:
 				logger.Debug("Updating by multiple IDs: %v", id)
-				query = query.Where("id IN (?)", id)
+				query = query.Where(fmt.Sprintf("%s IN (?)", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), id)
 			}
 		}
 
@@ -593,7 +595,8 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, url
 		err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 			for _, item := range updates {
 				if itemID, ok := item["id"]; ok {
-					txQuery := tx.NewUpdate().Table(tableName).SetMap(item).Where("id = ?", itemID)
+
+					txQuery := tx.NewUpdate().Table(tableName).SetMap(item).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), itemID)
 					if _, err := txQuery.Exec(ctx); err != nil {
 						return err
 					}
@@ -659,7 +662,8 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, url
 			for _, item := range updates {
 				if itemMap, ok := item.(map[string]interface{}); ok {
 					if itemID, ok := itemMap["id"]; ok {
-						txQuery := tx.NewUpdate().Table(tableName).SetMap(itemMap).Where("id = ?", itemID)
+
+						txQuery := tx.NewUpdate().Table(tableName).SetMap(itemMap).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(model))), itemID)
 						if _, err := txQuery.Exec(ctx); err != nil {
 							return err
 						}
@@ -706,7 +710,8 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 			logger.Info("Batch delete with %d IDs ([]string)", len(v))
 			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 				for _, itemID := range v {
-					query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+
+					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
 					if _, err := query.Exec(ctx); err != nil {
 						return fmt.Errorf("failed to delete record %s: %w", itemID, err)
 					}
@@ -745,7 +750,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 						continue // Skip items without ID
 					}
 
-					query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
 					result, err := query.Exec(ctx)
 					if err != nil {
 						return fmt.Errorf("failed to delete record %v: %w", itemID, err)
@@ -770,7 +775,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 				for _, item := range v {
 					if itemID, ok := item["id"]; ok && itemID != nil {
-						query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+						query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
 						result, err := query.Exec(ctx)
 						if err != nil {
 							return fmt.Errorf("failed to delete record %v: %w", itemID, err)
@@ -804,7 +809,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 		return
 	}
 
-	query := h.db.NewDelete().Table(tableName).Where("id = ?", id)
+	query := h.db.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), id)
 
 	result, err := query.Exec(ctx)
 	if err != nil {
@@ -1128,7 +1133,54 @@ func (h *Handler) applyPreloads(model interface{}, query common.SelectQuery, pre
 		// For now, we'll preload without conditions
 		// TODO: Implement column selection and filtering for preloads
 		// This requires a more sophisticated approach with callbacks or query builders
-		query = query.Preload(relationFieldName)
+		// Apply preloading
+
+		logger.Debug("Applying preload: %s", preload.Relation)
+		query = query.PreloadRelation(preload.Relation, func(sq common.SelectQuery) common.SelectQuery {
+			if len(preload.OmitColumns) > 0 {
+				allCols := reflection.GetModelColumns(model)
+				// Remove omitted columns
+				preload.Columns = []string{}
+				for _, col := range allCols {
+					addCols := true
+					for _, omitCol := range preload.OmitColumns {
+						if col == omitCol {
+							addCols = false
+							break
+						}
+					}
+					if addCols {
+						preload.Columns = append(preload.Columns, col)
+					}
+				}
+			}
+
+			if len(preload.Columns) > 0 {
+				sq = sq.Column(preload.Columns...)
+			}
+
+			if len(preload.Filters) > 0 {
+				for _, filter := range preload.Filters {
+					sq = h.applyFilter(sq, filter)
+				}
+			}
+			if len(preload.Sort) > 0 {
+				for _, sort := range preload.Sort {
+					sq = sq.Order(fmt.Sprintf("%s %s", sort.Column, sort.Direction))
+				}
+			}
+
+			if len(preload.Where) > 0 {
+				sq = sq.Where(preload.Where)
+			}
+
+			if preload.Limit != nil && *preload.Limit > 0 {
+				sq = sq.Limit(*preload.Limit)
+			}
+
+			return sq
+		})
+
 		logger.Debug("Applied Preload for relation: %s (field: %s)", preload.Relation, relationFieldName)
 	}
 

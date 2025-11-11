@@ -270,3 +270,11 @@ func (v *ColumnValidator) GetValidColumns() []string {
 	}
 	return columns
 }
+
+func QuoteIdent(qualifier string) string {
+	return `"` + strings.ReplaceAll(qualifier, `"`, `""`) + `"`
+}
+
+func QuoteLiteral(value string) string {
+	return `'` + strings.ReplaceAll(value, `'`, `''`) + `'`
+}

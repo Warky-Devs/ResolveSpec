@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bitechdev/ResolveSpec/pkg/logger"
+	"github.com/bitechdev/ResolveSpec/pkg/reflection"
 )
 
 // CRUDRequestProvider interface for models that provide CRUD request strings
@@ -248,7 +249,7 @@ func (p *NestedCUDProcessor) processUpdate(
 
 	logger.Debug("Updating %s with ID %v, data: %+v", tableName, id, data)
 
-	query := p.db.NewUpdate().Table(tableName).SetMap(data).Where("id = ?", id)
+	query := p.db.NewUpdate().Table(tableName).SetMap(data).Where(fmt.Sprintf("%s = ?", QuoteIdent(reflection.GetPrimaryKeyName(tableName))), id)
 
 	result, err := query.Exec(ctx)
 	if err != nil {
@@ -268,7 +269,7 @@ func (p *NestedCUDProcessor) processDelete(ctx context.Context, tableName string
 
 	logger.Debug("Deleting from %s with ID %v", tableName, id)
 
-	query := p.db.NewDelete().Table(tableName).Where("id = ?", id)
+	query := p.db.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", QuoteIdent(reflection.GetPrimaryKeyName(tableName))), id)
 
 	result, err := query.Exec(ctx)
 	if err != nil {

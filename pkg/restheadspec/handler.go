@@ -258,6 +258,13 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		for colName, colExpr := range options.ComputedQL {
 			logger.Debug("Applying computed column: %s", colName)
 			query = query.ColumnExpr("(?) AS "+colName, colExpr)
+			for colIndex := range options.Columns {
+				if options.Columns[colIndex] == colName {
+					//Remove the computed column from the selected columns to avoid duplication
+					options.Columns = append(options.Columns[:colIndex], options.Columns[colIndex+1:]...)
+					break
+				}
+			}
 		}
 	}
 
@@ -265,6 +272,13 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		for _, cu := range options.ComputedColumns {
 			logger.Debug("Applying computed column: %s", cu.Name)
 			query = query.ColumnExpr("(?) AS "+cu.Name, cu.Expression)
+			for colIndex := range options.Columns {
+				if options.Columns[colIndex] == cu.Name {
+					//Remove the computed column from the selected columns to avoid duplication
+					options.Columns = append(options.Columns[:colIndex], options.Columns[colIndex+1:]...)
+					break
+				}
+			}
 		}
 	}
 
@@ -274,18 +288,91 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		query = query.Column(options.Columns...)
 	}
 
+	// Apply expand (Just expand to Preload for now)
+	for _, expand := range options.Expand {
+		logger.Debug("Applying expand: %s", expand.Relation)
+		sorts := make([]common.SortOption, 0)
+		for _, s := range strings.Split(expand.Sort, ",") {
+			dir := "ASC"
+			if strings.HasPrefix(s, "-") || strings.HasSuffix(strings.ToUpper(s), " DESC") {
+				dir = "DESC"
+				s = strings.TrimPrefix(s, "-")
+				s = strings.TrimSuffix(strings.ToLower(s), " desc")
+			}
+			sorts = append(sorts, common.SortOption{
+				Column: s, Direction: dir,
+			})
+		}
+		// Note: Expand would require JOIN implementation
+		// For now, we'll use Preload as a fallback
+		//query = query.Preload(expand.Relation)
+		if options.Preload == nil {
+			options.Preload = make([]common.PreloadOption, 0)
+		}
+		skip := false
+		for _, existing := range options.Preload {
+			if existing.Relation == expand.Relation {
+				skip = true
+				continue
+			}
+		}
+		if !skip {
+			options.Preload = append(options.Preload, common.PreloadOption{
+				Relation: expand.Relation,
+				Columns:  expand.Columns,
+				Sort:     sorts,
+				Where:    expand.Where,
+			})
+		}
+	}
+
 	// Apply preloading
 	for _, preload := range options.Preload {
 		logger.Debug("Applying preload: %s", preload.Relation)
-		query = query.Preload(preload.Relation)
-	}
+		query = query.PreloadRelation(preload.Relation, func(sq common.SelectQuery) common.SelectQuery {
+			if len(preload.OmitColumns) > 0 {
+				allCols := reflection.GetModelColumns(model)
+				// Remove omitted columns
+				preload.Columns = []string{}
+				for _, col := range allCols {
+					addCols := true
+					for _, omitCol := range preload.OmitColumns {
+						if col == omitCol {
+							addCols = false
+							break
+						}
+					}
+					if addCols {
+						preload.Columns = append(preload.Columns, col)
+					}
+				}
+			}
 
-	// Apply expand (LEFT JOIN)
-	for _, expand := range options.Expand {
-		logger.Debug("Applying expand: %s", expand.Relation)
-		// Note: Expand would require JOIN implementation
-		// For now, we'll use Preload as a fallback
-		query = query.Preload(expand.Relation)
+			if len(preload.Columns) > 0 {
+				sq = sq.Column(preload.Columns...)
+			}
+
+			if len(preload.Filters) > 0 {
+				for _, filter := range preload.Filters {
+					sq = h.applyFilter(sq, filter, "", false, "AND")
+				}
+			}
+			if len(preload.Sort) > 0 {
+				for _, sort := range preload.Sort {
+					sq = sq.Order(fmt.Sprintf("%s %s", sort.Column, sort.Direction))
+				}
+			}
+
+			if len(preload.Where) > 0 {
+				sq = sq.Where(preload.Where)
+			}
+
+			if preload.Limit != nil && *preload.Limit > 0 {
+				sq = sq.Limit(*preload.Limit)
+			}
+
+			return sq
+		})
 	}
 
 	// Apply DISTINCT if requested
@@ -326,8 +413,10 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 
 	// If ID is provided, filter by ID
 	if id != "" {
-		logger.Debug("Filtering by ID: %s", id)
-		query = query.Where("id = ?", id)
+		pkName := reflection.GetPrimaryKeyName(model)
+		logger.Debug("Filtering by ID=%s: %s", pkName, id)
+
+		query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(pkName)), id)
 	}
 
 	// Apply sorting
@@ -794,13 +883,13 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 	}
 
 	query := h.db.NewUpdate().Table(tableName).SetMap(dataMap)
-
+	pkName := reflection.GetPrimaryKeyName(model)
 	// Apply ID filter
 	switch {
 	case id != "":
-		query = query.Where("id = ?", id)
+		query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(pkName)), id)
 	case idPtr != nil:
-		query = query.Where("id = ?", *idPtr)
+		query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(pkName)), *idPtr)
 	default:
 		h.sendError(w, http.StatusBadRequest, "missing_id", "ID is required for update", nil)
 		return
@@ -883,7 +972,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 						continue
 					}
 
-					query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
 
 					result, err := query.Exec(ctx)
 					if err != nil {
@@ -950,7 +1039,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 						continue
 					}
 
-					query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+					query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
 					result, err := query.Exec(ctx)
 					if err != nil {
 						return fmt.Errorf("failed to delete record %v: %w", itemID, err)
@@ -1001,7 +1090,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 							continue
 						}
 
-						query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+						query := tx.NewDelete().Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), itemID)
 						result, err := query.Exec(ctx)
 						if err != nil {
 							return fmt.Errorf("failed to delete record %v: %w", itemID, err)
@@ -1061,7 +1150,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 		return
 	}
 
-	query = query.Where("id = ?", id)
+	query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(reflection.GetPrimaryKeyName(tableName))), id)
 
 	// Execute BeforeScan hooks - pass query chain so hooks can modify it
 	hookCtx.Query = query
