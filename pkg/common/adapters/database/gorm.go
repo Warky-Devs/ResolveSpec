@@ -204,7 +204,7 @@ func (g *GormSelectQuery) PreloadRelation(relation string, apply ...func(common.
 		}
 
 		wrapper := &GormSelectQuery{
-			db: g.db,
+			db: db,
 		}
 
 		current := common.SelectQuery(wrapper)
