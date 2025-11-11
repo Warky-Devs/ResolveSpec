@@ -523,7 +523,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 
 	metadata := &common.Metadata{
 		Total:    int64(total),
-		Count:    int64(common.Len(modelPtr)),
+		Count:    int64(reflection.Len(modelPtr)),
 		Filtered: int64(total),
 		Limit:    limit,
 		Offset:   offset,
