@@ -294,7 +294,7 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 
 	logger.Info("Creating records for %s.%s", schema, entity)
 
-	// Check if data contains nested relations or crud_request field
+	// Check if data contains nested relations or _request field
 	switch v := data.(type) {
 	case map[string]interface{}:
 		// Check if we should use nested processing
@@ -1003,7 +1003,7 @@ func (h *Handler) RegisterModel(schema, name string, model interface{}) error {
 }
 
 // shouldUseNestedProcessor determines if we should use nested CUD processing
-// It checks if the data contains nested relations or a crud_request field
+// It checks if the data contains nested relations or a _request field
 func (h *Handler) shouldUseNestedProcessor(data map[string]interface{}, model interface{}) bool {
 	return common.ShouldUseNestedProcessor(data, model, h)
 }

@@ -1624,7 +1624,7 @@ func filterExtendedOptions(validator *common.ColumnValidator, options ExtendedRe
 }
 
 // shouldUseNestedProcessor determines if we should use nested CUD processing
-// It checks if the data contains nested relations or a crud_request field
+// It checks if the data contains nested relations or a _request field
 func (h *Handler) shouldUseNestedProcessor(data map[string]interface{}, model interface{}) bool {
 	return common.ShouldUseNestedProcessor(data, model, h)
 }

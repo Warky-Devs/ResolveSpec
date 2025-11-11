@@ -10,6 +10,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/database"
+	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/router"
 	"github.com/bitechdev/ResolveSpec/pkg/logger"
 	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
 	"github.com/bitechdev/ResolveSpec/pkg/resolvespec"
@@ -117,23 +119,44 @@ func setupTestDB() (*gorm.DB, error) {
 func setupTestRouter(db *gorm.DB) http.Handler {
 	r := mux.NewRouter()
 
-	// Create a new registry instance
+	// Create database adapter
+	dbAdapter := database.NewGormAdapter(db)
+
+	// Create registry
 	registry := modelregistry.NewModelRegistry()
 
-	// Register test models with the registry
+	// Register test models without schema prefix for SQLite compatibility
+	// SQLite doesn't support schema prefixes like "test.employees"
 	testmodels.RegisterTestModels(registry)
 
-	// Create handler with GORM adapter and the registry
-	handler := resolvespec.NewHandlerWithGORM(db)
+	// Create handler with pre-populated registry
+	handler := resolvespec.NewHandler(dbAdapter, registry)
 
-	// Register test models with the handler for the "test" schema
-	models := testmodels.GetTestModels()
-	modelNames := []string{"departments", "employees", "projects", "project_tasks", "documents", "comments"}
-	for i, model := range models {
-		handler.RegisterModel("test", modelNames[i], model)
-	}
+	// Setup routes without schema prefix for SQLite
+	// Routes: GET/POST /{entity}, GET/POST/PUT/PATCH/DELETE /{entity}/{id}
+	r.HandleFunc("/{entity}", func(w http.ResponseWriter, req *http.Request) {
+		vars := mux.Vars(req)
+		vars["schema"] = "" // Empty schema for SQLite
+		reqAdapter := router.NewHTTPRequest(req)
+		respAdapter := router.NewHTTPResponseWriter(w)
+		handler.Handle(respAdapter, reqAdapter, vars)
+	}).Methods("POST")
 
-	resolvespec.SetupMuxRoutes(r, handler)
+	r.HandleFunc("/{entity}/{id}", func(w http.ResponseWriter, req *http.Request) {
+		vars := mux.Vars(req)
+		vars["schema"] = "" // Empty schema for SQLite
+		reqAdapter := router.NewHTTPRequest(req)
+		respAdapter := router.NewHTTPResponseWriter(w)
+		handler.Handle(respAdapter, reqAdapter, vars)
+	}).Methods("POST")
+
+	r.HandleFunc("/{entity}", func(w http.ResponseWriter, req *http.Request) {
+		vars := mux.Vars(req)
+		vars["schema"] = "" // Empty schema for SQLite
+		reqAdapter := router.NewHTTPRequest(req)
+		respAdapter := router.NewHTTPResponseWriter(w)
+		handler.HandleGet(respAdapter, reqAdapter, vars)
+	}).Methods("GET")
 
 	return r
 }

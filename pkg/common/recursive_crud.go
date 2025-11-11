@@ -71,9 +71,9 @@ func (p *NestedCUDProcessor) ProcessNestedCUD(
 		RelationData: make(map[string]interface{}),
 	}
 
-	// Check if data has a crud_request field that overrides the operation
+	// Check if data has a _request field that overrides the operation
 	if requestOp := p.extractCRUDRequest(data); requestOp != "" {
-		logger.Debug("Found crud_request override: %s", requestOp)
+		logger.Debug("Found _request override: %s", requestOp)
 		operation = requestOp
 	}
 
@@ -92,8 +92,8 @@ func (p *NestedCUDProcessor) ProcessNestedCUD(
 	regularData := make(map[string]interface{})
 
 	for key, value := range data {
-		// Skip crud_request field in actual data processing
-		if key == "crud_request" {
+		// Skip _request field in actual data processing
+		if key == "_request" {
 			continue
 		}
 
@@ -162,9 +162,9 @@ func (p *NestedCUDProcessor) ProcessNestedCUD(
 	return result, nil
 }
 
-// extractCRUDRequest extracts the crud_request field from data if present
+// extractCRUDRequest extracts the request field from data if present
 func (p *NestedCUDProcessor) extractCRUDRequest(data map[string]interface{}) string {
-	if request, ok := data["crud_request"]; ok {
+	if request, ok := data["_request"]; ok {
 		if requestStr, ok := request.(string); ok {
 			return strings.ToLower(strings.TrimSpace(requestStr))
 		}
@@ -377,10 +377,10 @@ func (p *NestedCUDProcessor) getTableNameForModel(model interface{}, defaultName
 }
 
 // ShouldUseNestedProcessor determines if we should use nested CUD processing
-// It checks if the data contains nested relations or a crud_request field
+// It checks if the data contains nested relations or a _request field
 func ShouldUseNestedProcessor(data map[string]interface{}, model interface{}, relationshipHelper RelationshipInfoProvider) bool {
-	// Check for crud_request field
-	if _, hasCRUDRequest := data["crud_request"]; hasCRUDRequest {
+	// Check for _request field
+	if _, hasCRUDRequest := data["_request"]; hasCRUDRequest {
 		return true
 	}
 
@@ -396,8 +396,8 @@ func ShouldUseNestedProcessor(data map[string]interface{}, model interface{}, re
 
 	// Check if data contains any fields that are relations (nested objects or arrays)
 	for key, value := range data {
-		// Skip crud_request and regular scalar fields
-		if key == "crud_request" {
+		// Skip _request and regular scalar fields
+		if key == "_request" {
 			continue
 		}
 

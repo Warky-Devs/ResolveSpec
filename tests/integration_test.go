@@ -26,7 +26,7 @@ func TestDepartmentEmployees(t *testing.T) {
 		},
 	}
 
-	resp := makeRequest(t, "/test/departments", deptPayload)
+	resp := makeRequest(t, "/departments", deptPayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Create employees in department
@@ -52,7 +52,7 @@ func TestDepartmentEmployees(t *testing.T) {
 		},
 	}
 
-	resp = makeRequest(t, "/test/employees", empPayload)
+	resp = makeRequest(t, "/employees", empPayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Read department with employees
@@ -68,7 +68,7 @@ func TestDepartmentEmployees(t *testing.T) {
 		},
 	}
 
-	resp = makeRequest(t, "/test/departments/dept1", readPayload)
+	resp = makeRequest(t, "/departments/dept1", readPayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -92,7 +92,7 @@ func TestEmployeeHierarchy(t *testing.T) {
 		},
 	}
 
-	resp := makeRequest(t, "/test/employees", mgrPayload)
+	resp := makeRequest(t, "/employees", mgrPayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Update employees to set manager
@@ -103,9 +103,9 @@ func TestEmployeeHierarchy(t *testing.T) {
 		},
 	}
 
-	resp = makeRequest(t, "/test/employees/emp1", updatePayload)
+	resp = makeRequest(t, "/employees/emp1", updatePayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	resp = makeRequest(t, "/test/employees/emp2", updatePayload)
+	resp = makeRequest(t, "/employees/emp2", updatePayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Read manager with reports
@@ -121,7 +121,7 @@ func TestEmployeeHierarchy(t *testing.T) {
 		},
 	}
 
-	resp = makeRequest(t, "/test/employees/mgr1", readPayload)
+	resp = makeRequest(t, "/employees/mgr1", readPayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -147,7 +147,7 @@ func TestProjectStructure(t *testing.T) {
 		},
 	}
 
-	resp := makeRequest(t, "/test/projects", projectPayload)
+	resp := makeRequest(t, "/projects", projectPayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Create project tasks
@@ -177,7 +177,7 @@ func TestProjectStructure(t *testing.T) {
 		},
 	}
 
-	resp = makeRequest(t, "/test/project_tasks", taskPayload)
+	resp = makeRequest(t, "/project_tasks", taskPayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Create task comments
@@ -191,7 +191,7 @@ func TestProjectStructure(t *testing.T) {
 		},
 	}
 
-	resp = makeRequest(t, "/test/comments", commentPayload)
+	resp = makeRequest(t, "/comments", commentPayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Read project with all relations
@@ -223,7 +223,7 @@ func TestProjectStructure(t *testing.T) {
 		},
 	}
 
-	resp = makeRequest(t, "/test/projects/proj1", readPayload)
+	resp = makeRequest(t, "/projects/proj1", readPayload)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var result map[string]interface{}

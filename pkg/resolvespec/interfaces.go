@@ -10,15 +10,15 @@ type GormTableSchemaInterface interface {
 }
 
 type GormTableCRUDRequest struct {
-	CRUDRequest *string `json:"crud_request"`
+	Request *string `json:"_request"`
 }
 
 func (r *GormTableCRUDRequest) SetRequest(request string) {
-	r.CRUDRequest = &request
+	r.Request = &request
 }
 
 func (r GormTableCRUDRequest) GetRequest() string {
-	return *r.CRUDRequest
+	return *r.Request
 }
 
 // New interfaces that replace the legacy ones above
