@@ -73,11 +73,11 @@ func GetModelColumnDetail(record reflect.Value) []ModelFieldDetail {
 			ie := strings.Index(gormdetail[ik:], ";")
 			if ie > ik && ik > 0 {
 				fielddetail.SQLName = strings.ToLower(gormdetail)[ik+11 : ik+ie]
-				//fmt.Printf("\r\nforeignkey: %v", fielddetail)
+				// fmt.Printf("\r\nforeignkey: %v", fielddetail)
 			}
 
 		}
-		//";foreignkey:rid_parent;association_foreignkey:id_atevent;save_associations:false;association_autocreate:false;"
+		// ";foreignkey:rid_parent;association_foreignkey:id_atevent;save_associations:false;association_autocreate:false;"
 
 		lst = append(lst, fielddetail)
 

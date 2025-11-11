@@ -3,8 +3,9 @@ package router
 import (
 	"net/http"
 
-	"github.com/bitechdev/ResolveSpec/pkg/common"
 	"github.com/uptrace/bunrouter"
+
+	"github.com/bitechdev/ResolveSpec/pkg/common"
 )
 
 // BunRouterAdapter adapts uptrace/bunrouter to work with our Router interface

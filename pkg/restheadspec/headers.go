@@ -2,7 +2,6 @@ package restheadspec
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -59,7 +58,7 @@ func decodeHeaderValue(value string) string {
 
 // DecodeParam - Decodes parameter string and returns unencoded string
 func DecodeParam(pStr string) (string, error) {
-	var code string = pStr
+	var code = pStr
 	if strings.HasPrefix(pStr, "ZIP_") {
 		code = strings.ReplaceAll(pStr, "ZIP_", "")
 		code = strings.ReplaceAll(code, "\n", "")
@@ -125,7 +124,7 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 		case strings.HasPrefix(normalizedKey, "x-not-select-fields"):
 			h.parseNotSelectFields(&options, decodedValue)
 		case strings.HasPrefix(normalizedKey, "x-clean-json"):
-			options.CleanJSON = strings.ToLower(decodedValue) == "true"
+			options.CleanJSON = strings.EqualFold(decodedValue, "true")
 
 		// Filtering & Search
 		case strings.HasPrefix(normalizedKey, "x-fieldfilter-"):
@@ -166,9 +165,9 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 				options.Offset = &offset
 			}
 		case strings.HasPrefix(normalizedKey, "x-cursor-forward"):
-			options.RequestOptions.CursorForward = decodedValue
+			options.CursorForward = decodedValue
 		case strings.HasPrefix(normalizedKey, "x-cursor-backward"):
-			options.RequestOptions.CursorBackward = decodedValue
+			options.CursorBackward = decodedValue
 
 		// Advanced Features
 		case strings.HasPrefix(normalizedKey, "x-advsql-"):
@@ -178,13 +177,13 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 			colName := strings.TrimPrefix(normalizedKey, "x-cql-sel-")
 			options.ComputedQL[colName] = decodedValue
 		case strings.HasPrefix(normalizedKey, "x-distinct"):
-			options.Distinct = strings.ToLower(decodedValue) == "true"
+			options.Distinct = strings.EqualFold(decodedValue, "true")
 		case strings.HasPrefix(normalizedKey, "x-skipcount"):
-			options.SkipCount = strings.ToLower(decodedValue) == "true"
+			options.SkipCount = strings.EqualFold(decodedValue, "true")
 		case strings.HasPrefix(normalizedKey, "x-skipcache"):
-			options.SkipCache = strings.ToLower(decodedValue) == "true"
+			options.SkipCache = strings.EqualFold(decodedValue, "true")
 		case strings.HasPrefix(normalizedKey, "x-fetch-rownumber"):
-			options.RequestOptions.FetchRowNumber = &decodedValue
+			options.FetchRowNumber = &decodedValue
 		case strings.HasPrefix(normalizedKey, "x-pkrow"):
 			options.PKRow = &decodedValue
 
@@ -198,7 +197,7 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 
 		// Transaction Control
 		case strings.HasPrefix(normalizedKey, "x-transaction-atomic"):
-			options.AtomicTransaction = strings.ToLower(decodedValue) == "true"
+			options.AtomicTransaction = strings.EqualFold(decodedValue, "true")
 		}
 	}
 
@@ -455,16 +454,6 @@ func (h *Handler) parseCommaSeparated(value string) []string {
 	return result
 }
 
-// parseJSONHeader parses a header value as JSON
-func (h *Handler) parseJSONHeader(value string) (map[string]interface{}, error) {
-	var result map[string]interface{}
-	err := json.Unmarshal([]byte(value), &result)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON header: %w", err)
-	}
-	return result, nil
-}
-
 // getColumnTypeFromModel uses reflection to determine the Go type of a column in a model
 func (h *Handler) getColumnTypeFromModel(model interface{}, colName string) reflect.Kind {
 	if model == nil {
@@ -534,11 +523,6 @@ func isNumericType(kind reflect.Kind) bool {
 // isStringType checks if a reflect.Kind is a string type
 func isStringType(kind reflect.Kind) bool {
 	return kind == reflect.String
-}
-
-// isBoolType checks if a reflect.Kind is a boolean type
-func isBoolType(kind reflect.Kind) bool {
-	return kind == reflect.Bool
 }
 
 // convertToNumericType converts a string value to the appropriate numeric type

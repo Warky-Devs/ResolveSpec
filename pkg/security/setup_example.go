@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/bitechdev/ResolveSpec/pkg/restheadspec"
 	"github.com/gorilla/mux"
 	"gorm.io/gorm"
+
+	"github.com/bitechdev/ResolveSpec/pkg/restheadspec"
 )
 
 // SetupSecurityProvider initializes and configures the security provider
@@ -31,7 +32,6 @@ import (
 //	// Step 3: Apply middleware
 //	router.Use(mux.MiddlewareFunc(security.AuthMiddleware))
 //	router.Use(mux.MiddlewareFunc(security.SetSecurityMiddleware))
-//
 func SetupSecurityProvider(handler *restheadspec.Handler, securityList *SecurityList) error {
 	// Validate that required callbacks are configured
 	if securityList.AuthenticateCallback == nil {

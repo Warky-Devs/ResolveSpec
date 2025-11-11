@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bitechdev/ResolveSpec/pkg/common"
 	"gorm.io/gorm"
+
+	"github.com/bitechdev/ResolveSpec/pkg/common"
 )
 
 // GormAdapter adapts GORM to work with our Database interface

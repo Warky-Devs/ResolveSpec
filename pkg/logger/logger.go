@@ -75,7 +75,7 @@ func Debug(template string, args ...interface{}) {
 // CatchPanic - Handle panic
 func CatchPanicCallback(location string, cb func(err any)) {
 	if err := recover(); err != nil {
-		//callstack := debug.Stack()
+		// callstack := debug.Stack()
 
 		if Logger != nil {
 			Error("Panic in %s : %v", location, err)
@@ -84,7 +84,7 @@ func CatchPanicCallback(location string, cb func(err any)) {
 			debug.PrintStack()
 		}
 
-		//push to sentry
+		// push to sentry
 		// hub := sentry.CurrentHub()
 		// if hub != nil {
 		// 	evtID := hub.Recover(err)

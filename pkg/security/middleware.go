@@ -7,9 +7,9 @@ import (
 
 const (
 	// Context keys for user information
-	UserIDKey     = "user_id"
-	UserRolesKey  = "user_roles"
-	UserTokenKey  = "user_token"
+	UserIDKey    = "user_id"
+	UserRolesKey = "user_roles"
+	UserTokenKey = "user_token"
 )
 
 // AuthMiddleware extracts user authentication from request and adds to context

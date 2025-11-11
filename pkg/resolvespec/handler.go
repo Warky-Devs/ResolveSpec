@@ -210,7 +210,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	// Apply sorting
 	for _, sort := range options.Sort {
 		direction := "ASC"
-		if strings.ToLower(sort.Direction) == "desc" {
+		if strings.EqualFold(sort.Direction, "desc") {
 			direction = "DESC"
 		}
 		logger.Debug("Applying sort: %s %s", sort.Column, direction)
@@ -969,17 +969,20 @@ func (h *Handler) generateMetadata(schema, entity string, model interface{}) *co
 
 func (h *Handler) sendResponse(w common.ResponseWriter, data interface{}, metadata *common.Metadata) {
 	w.SetHeader("Content-Type", "application/json")
-	w.WriteJSON(common.Response{
+	err := w.WriteJSON(common.Response{
 		Success:  true,
 		Data:     data,
 		Metadata: metadata,
 	})
+	if err != nil {
+		logger.Error("Error sending response: %v", err)
+	}
 }
 
 func (h *Handler) sendError(w common.ResponseWriter, status int, code, message string, details interface{}) {
 	w.SetHeader("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.WriteJSON(common.Response{
+	err := w.WriteJSON(common.Response{
 		Success: false,
 		Error: &common.APIError{
 			Code:    code,
@@ -988,6 +991,9 @@ func (h *Handler) sendError(w common.ResponseWriter, status int, code, message s
 			Detail:  fmt.Sprintf("%v", details),
 		},
 	})
+	if err != nil {
+		logger.Error("Error sending response: %v", err)
+	}
 }
 
 // RegisterModel allows registering models at runtime

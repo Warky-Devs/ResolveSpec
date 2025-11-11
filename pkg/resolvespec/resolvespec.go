@@ -3,13 +3,14 @@ package resolvespec
 import (
 	"net/http"
 
-	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/database"
-	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/router"
-	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
 	"github.com/gorilla/mux"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bunrouter"
 	"gorm.io/gorm"
+
+	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/database"
+	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/router"
+	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
 )
 
 // NewHandlerWithGORM creates a new Handler with GORM adapter

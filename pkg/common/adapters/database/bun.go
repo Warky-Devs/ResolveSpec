@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bitechdev/ResolveSpec/pkg/common"
 	"github.com/uptrace/bun"
+
+	"github.com/bitechdev/ResolveSpec/pkg/common"
 )
 
 // BunAdapter adapts Bun to work with our Database interface

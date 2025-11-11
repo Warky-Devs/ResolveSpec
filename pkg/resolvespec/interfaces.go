@@ -23,5 +23,5 @@ func (r GormTableCRUDRequest) GetRequest() string {
 
 // New interfaces that replace the legacy ones above
 // These are now defined in database.go:
-// - TableNameProvider (replaces GormTableNameInterface)  
+// - TableNameProvider (replaces GormTableNameInterface)
 // - SchemaProvider (replaces GormTableSchemaInterface)

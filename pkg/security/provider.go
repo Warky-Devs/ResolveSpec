@@ -146,7 +146,7 @@ func (m *SecurityList) ColumSecurityApplyOnRecord(prevRecord reflect.Value, newR
 	}
 
 	for _, colsec := range colsecList {
-		if !(strings.EqualFold(colsec.Accesstype, "mask") || strings.EqualFold(colsec.Accesstype, "hide")) {
+		if !strings.EqualFold(colsec.Accesstype, "mask") && !strings.EqualFold(colsec.Accesstype, "hide") {
 			continue
 		}
 		lastRecords := interateStruct(prevRecord)
@@ -316,7 +316,7 @@ func (m *SecurityList) ApplyColumnSecurity(records reflect.Value, modelType refl
 	}
 
 	for _, colsec := range colsecList {
-		if !(strings.EqualFold(colsec.Accesstype, "mask") || strings.EqualFold(colsec.Accesstype, "hide")) {
+		if !strings.EqualFold(colsec.Accesstype, "mask") && !strings.EqualFold(colsec.Accesstype, "hide") {
 			continue
 		}
 
@@ -408,7 +408,7 @@ func (m *SecurityList) ClearSecurity(pUserID int, pSchema, pTablename string) er
 	}
 
 	for _, cs := range list {
-		if !(cs.Schema == pSchema && cs.Tablename == pTablename && cs.UserID == pUserID) {
+		if cs.Schema != pSchema && cs.Tablename != pTablename && cs.UserID != pUserID {
 			filtered = append(filtered, cs)
 		}
 	}

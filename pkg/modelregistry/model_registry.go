@@ -69,19 +69,19 @@ func (r *DefaultModelRegistry) RegisterModel(name string, model interface{}) err
 func (r *DefaultModelRegistry) GetModel(name string) (interface{}, error) {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
-	
+
 	model, exists := r.models[name]
 	if !exists {
 		return nil, fmt.Errorf("model %s not found", name)
 	}
-	
+
 	return model, nil
 }
 
 func (r *DefaultModelRegistry) GetAllModels() map[string]interface{} {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
-	
+
 	result := make(map[string]interface{})
 	for k, v := range r.models {
 		result[k] = v

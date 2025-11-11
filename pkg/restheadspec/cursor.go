@@ -140,19 +140,19 @@ func (opts *ExtendedRequestOptions) GetCursorFilter(
 // ------------------------------------------------------------------------- //
 // Helper: get active cursor (forward or backward)
 func (opts *ExtendedRequestOptions) getActiveCursor() (id string, direction CursorDirection) {
-	if opts.RequestOptions.CursorForward != "" {
-		return opts.RequestOptions.CursorForward, CursorForward
+	if opts.CursorForward != "" {
+		return opts.CursorForward, CursorForward
 	}
-	if opts.RequestOptions.CursorBackward != "" {
-		return opts.RequestOptions.CursorBackward, CursorBackward
+	if opts.CursorBackward != "" {
+		return opts.CursorBackward, CursorBackward
 	}
 	return "", 0
 }
 
 // Helper: extract sort columns
 func (opts *ExtendedRequestOptions) getSortColumns() []common.SortOption {
-	if opts.RequestOptions.Sort != nil {
-		return opts.RequestOptions.Sort
+	if opts.Sort != nil {
+		return opts.Sort
 	}
 	return nil
 }

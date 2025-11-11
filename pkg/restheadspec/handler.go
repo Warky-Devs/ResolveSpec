@@ -318,7 +318,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	// Apply sorting
 	for _, sort := range options.Sort {
 		direction := "ASC"
-		if strings.ToLower(sort.Direction) == "desc" {
+		if strings.EqualFold(sort.Direction, "desc") {
 			direction = "DESC"
 		}
 		logger.Debug("Applying sort: %s %s", sort.Column, direction)
@@ -352,7 +352,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	}
 
 	// Apply cursor-based pagination
-	if len(options.RequestOptions.CursorForward) > 0 || len(options.RequestOptions.CursorBackward) > 0 {
+	if len(options.CursorForward) > 0 || len(options.CursorBackward) > 0 {
 		logger.Debug("Applying cursor pagination")
 
 		// Get primary key name
@@ -425,9 +425,9 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	}
 
 	// Fetch row number for a specific record if requested
-	if options.RequestOptions.FetchRowNumber != nil && *options.RequestOptions.FetchRowNumber != "" {
+	if options.FetchRowNumber != nil && *options.FetchRowNumber != "" {
 		pkName := reflection.GetPrimaryKeyName(model)
-		pkValue := *options.RequestOptions.FetchRowNumber
+		pkValue := *options.FetchRowNumber
 
 		logger.Debug("Fetching row number for specific PK %s = %s", pkName, pkValue)
 
@@ -1415,7 +1415,7 @@ func (h *Handler) FetchRowNumber(ctx context.Context, tableName string, pkName s
 		sortParts := make([]string, 0, len(options.Sort))
 		for _, sort := range options.Sort {
 			direction := "ASC"
-			if strings.ToLower(sort.Direction) == "desc" {
+			if strings.EqualFold(sort.Direction, "desc") {
 				direction = "DESC"
 			}
 			sortParts = append(sortParts, fmt.Sprintf("%s.%s %s", tableName, sort.Column, direction))

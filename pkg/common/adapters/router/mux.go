@@ -5,8 +5,9 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/bitechdev/ResolveSpec/pkg/common"
 	"github.com/gorilla/mux"
+
+	"github.com/bitechdev/ResolveSpec/pkg/common"
 )
 
 // MuxAdapter adapts Gorilla Mux to work with our Router interface

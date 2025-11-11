@@ -1,0 +1,129 @@
+{
+  "formatters": {
+    "enable": [
+      "gofmt",
+      "goimports"
+    ],
+    "exclusions": {
+      "generated": "lax",
+      "paths": [
+        "third_party$",
+        "builtin$",
+        "examples$"
+      ]
+    },
+    "settings": {
+      "gofmt": {
+        "simplify": true
+      },
+      "goimports": {
+        "local-prefixes": [
+          "github.com/bitechdev/ResolveSpec"
+        ]
+      }
+    }
+  },
+  "issues": {
+    "max-issues-per-linter": 0,
+    "max-same-issues": 0
+  },
+  "linters": {
+    "enable": [
+      "gocritic",
+      "misspell",
+      "revive"
+    ],
+    "exclusions": {
+      "generated": "lax",
+      "paths": [
+        "third_party$",
+        "builtin$",
+        "examples$",
+        "mocks?",
+        "tests?"
+      ],
+      "rules": [
+        {
+          "linters": [
+            "dupl",
+            "errcheck",
+            "gocritic",
+            "gosec"
+          ],
+          "path": "_test\\.go"
+        },
+        {
+          "linters": [
+            "errcheck"
+          ],
+          "text": "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*print(f|ln)?|os\\.(Un)?Setenv). is not checked"
+        },
+        {
+          "path": "_test\\.go",
+          "text": "cognitive complexity|cyclomatic complexity"
+        }
+      ]
+    },
+    "settings": {
+      "errcheck": {
+        "check-blank": false,
+        "check-type-assertions": false
+      },
+      "gocritic": {
+        "enabled-checks": [
+          "appendAssign",
+          "assignOp",
+          "boolExprSimplify",
+          "builtinShadow",
+          "captLocal",
+          "caseOrder",
+          "defaultCaseOrder",
+          "dupArg",
+          "dupBranchBody",
+          "dupCase",
+          "dupSubExpr",
+          "elseif",
+          "emptyFallthrough",
+          "equalFold",
+          "flagName",
+          "ifElseChain",
+          "indexAlloc",
+          "initClause",
+          "methodExprCall",
+          "nilValReturn",
+          "rangeExprCopy",
+          "rangeValCopy",
+          "regexpMust",
+          "singleCaseSwitch",
+          "sloppyLen",
+          "stringXbytes",
+          "switchTrue",
+          "typeAssertChain",
+          "typeSwitchVar",
+          "underef",
+          "unlabelStmt",
+          "unnamedResult",
+          "unnecessaryBlock",
+          "weakCond",
+          "yodaStyleExpr"
+        ]
+      },
+      "revive": {
+        "rules": [
+          {
+            "disabled": true,
+            "name": "exported"
+          },
+          {
+            "disabled": true,
+            "name": "package-comments"
+          }
+        ]
+      }
+    }
+  },
+  "run": {
+    "tests": true
+  },
+  "version": "2"
+}

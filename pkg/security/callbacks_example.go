@@ -1,14 +1,11 @@
 package security
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-
-	DBM "github.com/bitechdev/GoCore/pkg/models"
-	"github.com/bitechdev/ResolveSpec/pkg/logger"
+	// DBM "github.com/bitechdev/GoCore/pkg/models"
 )
 
 // This file provides example implementations of the required security callbacks.
@@ -121,104 +118,104 @@ func ExampleAuthenticateFromSession(r *http.Request) (userID int, roles string, 
 func ExampleLoadColumnSecurityFromDatabase(pUserID int, pSchema, pTablename string) ([]ColumnSecurity, error) {
 	colSecList := make([]ColumnSecurity, 0)
 
-	getExtraFilters := func(pStr string) map[string]string {
-		mp := make(map[string]string, 0)
-		for i, val := range strings.Split(pStr, ",") {
-			if i <= 1 {
-				continue
-			}
-			vals := strings.Split(val, ":")
-			if len(vals) > 1 {
-				mp[vals[0]] = vals[1]
-			}
-		}
-		return mp
-	}
+	// getExtraFilters := func(pStr string) map[string]string {
+	// 	mp := make(map[string]string, 0)
+	// 	for i, val := range strings.Split(pStr, ",") {
+	// 		if i <= 1 {
+	// 			continue
+	// 		}
+	// 		vals := strings.Split(val, ":")
+	// 		if len(vals) > 1 {
+	// 			mp[vals[0]] = vals[1]
+	// 		}
+	// 	}
+	// 	return mp
+	// }
 
-	rows, err := DBM.DBConn.Raw(fmt.Sprintf(`
-		SELECT a.rid_secacces, a.control, a.accesstype, a.jsonvalue
-		FROM core.secacces a
-		WHERE a.rid_hub IN (
-			SELECT l.rid_hub_parent
-			FROM core.hub_link l
-			WHERE l.parent_hubtype = 'secgroup'
-				AND l.rid_hub_child = ?
-		)
-		AND control ILIKE '%s.%s%%'
-	`, pSchema, pTablename), pUserID).Rows()
+	// rows, err := DBM.DBConn.Raw(fmt.Sprintf(`
+	// 	SELECT a.rid_secacces, a.control, a.accesstype, a.jsonvalue
+	// 	FROM core.secacces a
+	// 	WHERE a.rid_hub IN (
+	// 		SELECT l.rid_hub_parent
+	// 		FROM core.hub_link l
+	// 		WHERE l.parent_hubtype = 'secgroup'
+	// 			AND l.rid_hub_child = ?
+	// 	)
+	// 	AND control ILIKE '%s.%s%%'
+	// `, pSchema, pTablename), pUserID).Rows()
 
-	defer func() {
-		if rows != nil {
-			rows.Close()
-		}
-	}()
+	// defer func() {
+	// 	if rows != nil {
+	// 		rows.Close()
+	// 	}
+	// }()
 
-	if err != nil {
-		return colSecList, fmt.Errorf("failed to fetch column security from SQL: %v", err)
-	}
+	// if err != nil {
+	// 	return colSecList, fmt.Errorf("failed to fetch column security from SQL: %v", err)
+	// }
 
-	for rows.Next() {
-		var rid int
-		var jsondata []byte
-		var control, accesstype string
+	// for rows.Next() {
+	// 	var rid int
+	// 	var jsondata []byte
+	// 	var control, accesstype string
 
-		err = rows.Scan(&rid, &control, &accesstype, &jsondata)
-		if err != nil {
-			return colSecList, fmt.Errorf("failed to scan column security: %v", err)
-		}
+	// 	err = rows.Scan(&rid, &control, &accesstype, &jsondata)
+	// 	if err != nil {
+	// 		return colSecList, fmt.Errorf("failed to scan column security: %v", err)
+	// 	}
 
-		parts := strings.Split(control, ",")
-		ids := strings.Split(parts[0], ".")
-		if len(ids) < 3 {
-			continue
-		}
+	// 	parts := strings.Split(control, ",")
+	// 	ids := strings.Split(parts[0], ".")
+	// 	if len(ids) < 3 {
+	// 		continue
+	// 	}
 
-		jsonvalue := make(map[string]interface{})
-		if len(jsondata) > 1 {
-			err = json.Unmarshal(jsondata, &jsonvalue)
-			if err != nil {
-				logger.Error("Failed to parse json: %v", err)
-			}
-		}
+	// 	jsonvalue := make(map[string]interface{})
+	// 	if len(jsondata) > 1 {
+	// 		err = json.Unmarshal(jsondata, &jsonvalue)
+	// 		if err != nil {
+	// 			logger.Error("Failed to parse json: %v", err)
+	// 		}
+	// 	}
 
-		colsec := ColumnSecurity{
-			Schema:       pSchema,
-			Tablename:    pTablename,
-			UserID:       pUserID,
-			Path:         ids[2:],
-			ExtraFilters: getExtraFilters(control),
-			Accesstype:   accesstype,
-			Control:      control,
-			ID:           int(rid),
-		}
+	// 	colsec := ColumnSecurity{
+	// 		Schema:       pSchema,
+	// 		Tablename:    pTablename,
+	// 		UserID:       pUserID,
+	// 		Path:         ids[2:],
+	// 		ExtraFilters: getExtraFilters(control),
+	// 		Accesstype:   accesstype,
+	// 		Control:      control,
+	// 		ID:           int(rid),
+	// 	}
 
-		// Parse masking configuration from JSON
-		if v, ok := jsonvalue["start"]; ok {
-			if value, ok := v.(float64); ok {
-				colsec.MaskStart = int(value)
-			}
-		}
+	// 	// Parse masking configuration from JSON
+	// 	if v, ok := jsonvalue["start"]; ok {
+	// 		if value, ok := v.(float64); ok {
+	// 			colsec.MaskStart = int(value)
+	// 		}
+	// 	}
 
-		if v, ok := jsonvalue["end"]; ok {
-			if value, ok := v.(float64); ok {
-				colsec.MaskEnd = int(value)
-			}
-		}
+	// 	if v, ok := jsonvalue["end"]; ok {
+	// 		if value, ok := v.(float64); ok {
+	// 			colsec.MaskEnd = int(value)
+	// 		}
+	// 	}
 
-		if v, ok := jsonvalue["invert"]; ok {
-			if value, ok := v.(bool); ok {
-				colsec.MaskInvert = value
-			}
-		}
+	// 	if v, ok := jsonvalue["invert"]; ok {
+	// 		if value, ok := v.(bool); ok {
+	// 			colsec.MaskInvert = value
+	// 		}
+	// 	}
 
-		if v, ok := jsonvalue["char"]; ok {
-			if value, ok := v.(string); ok {
-				colsec.MaskChar = value
-			}
-		}
+	// 	if v, ok := jsonvalue["char"]; ok {
+	// 		if value, ok := v.(string); ok {
+	// 			colsec.MaskChar = value
+	// 		}
+	// 	}
 
-		colSecList = append(colSecList, colsec)
-	}
+	// 	colSecList = append(colSecList, colsec)
+	// }
 
 	return colSecList, nil
 }
@@ -296,34 +293,34 @@ func ExampleLoadRowSecurityFromDatabase(pUserID int, pSchema, pTablename string)
 		UserID:    pUserID,
 	}
 
-	rows, err := DBM.DBConn.Raw(`
-		SELECT r.p_retval, r.p_errmsg, r.p_template, r.p_block
-		FROM core.api_sec_rowtemplate(?, ?, ?) r
-	`, pSchema, pTablename, pUserID).Rows()
+	// rows, err := DBM.DBConn.Raw(`
+	// 	SELECT r.p_retval, r.p_errmsg, r.p_template, r.p_block
+	// 	FROM core.api_sec_rowtemplate(?, ?, ?) r
+	// `, pSchema, pTablename, pUserID).Rows()
 
-	defer func() {
-		if rows != nil {
-			rows.Close()
-		}
-	}()
+	// defer func() {
+	// 	if rows != nil {
+	// 		rows.Close()
+	// 	}
+	// }()
 
-	if err != nil {
-		return record, fmt.Errorf("failed to fetch row security from SQL: %v", err)
-	}
+	// if err != nil {
+	// 	return record, fmt.Errorf("failed to fetch row security from SQL: %v", err)
+	// }
 
-	for rows.Next() {
-		var retval int
-		var errmsg string
+	// for rows.Next() {
+	// 	var retval int
+	// 	var errmsg string
 
-		err = rows.Scan(&retval, &errmsg, &record.Template, &record.HasBlock)
-		if err != nil {
-			return record, fmt.Errorf("failed to scan row security: %v", err)
-		}
+	// 	err = rows.Scan(&retval, &errmsg, &record.Template, &record.HasBlock)
+	// 	if err != nil {
+	// 		return record, fmt.Errorf("failed to scan row security: %v", err)
+	// 	}
 
-		if retval != 0 {
-			return RowSecurity{}, fmt.Errorf("api_sec_rowtemplate error: %s", errmsg)
-		}
-	}
+	// 	if retval != 0 {
+	// 		return RowSecurity{}, fmt.Errorf("api_sec_rowtemplate error: %s", errmsg)
+	// 	}
+	// }
 
 	return record, nil
 }
