@@ -146,7 +146,12 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 
 		// Joins & Relations
 		case strings.HasPrefix(normalizedKey, "x-preload"):
-			h.parsePreload(&options, decodedValue)
+			if strings.HasSuffix(normalizedKey, "-where") {
+				continue
+			}
+			whereClaude := headers[fmt.Sprintf("%s-where", key)]
+			h.parsePreload(&options, decodedValue, decodeHeaderValue(whereClaude))
+
 		case strings.HasPrefix(normalizedKey, "x-expand"):
 			h.parseExpand(&options, decodedValue)
 		case strings.HasPrefix(normalizedKey, "x-custom-sql-join"):
@@ -341,7 +346,15 @@ func (h *Handler) mapSearchOperator(colName, operator, value string) common.Filt
 
 // parsePreload parses x-preload header
 // Format: RelationName:field1,field2 or RelationName or multiple separated by |
-func (h *Handler) parsePreload(options *ExtendedRequestOptions, value string) {
+func (h *Handler) parsePreload(options *ExtendedRequestOptions, values ...string) {
+	if len(values) == 0 {
+		return
+	}
+	value := values[0]
+	whereClause := ""
+	if len(values) > 1 {
+		whereClause = values[1]
+	}
 	if value == "" {
 		return
 	}
@@ -358,6 +371,7 @@ func (h *Handler) parsePreload(options *ExtendedRequestOptions, value string) {
 		parts := strings.SplitN(preloadStr, ":", 2)
 		preload := common.PreloadOption{
 			Relation: strings.TrimSpace(parts[0]),
+			Where:    whereClause,
 		}
 
 		if len(parts) == 2 {
