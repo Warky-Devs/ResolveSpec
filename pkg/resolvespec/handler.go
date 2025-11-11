@@ -15,16 +15,20 @@ import (
 
 // Handler handles API requests using database and model abstractions
 type Handler struct {
-	db       common.Database
-	registry common.ModelRegistry
+	db              common.Database
+	registry        common.ModelRegistry
+	nestedProcessor *common.NestedCUDProcessor
 }
 
 // NewHandler creates a new API handler with database and registry abstractions
 func NewHandler(db common.Database, registry common.ModelRegistry) *Handler {
-	return &Handler{
+	handler := &Handler{
 		db:       db,
 		registry: registry,
 	}
+	// Initialize nested processor
+	handler.nestedProcessor = common.NewNestedCUDProcessor(db, registry, handler)
+	return handler
 }
 
 // handlePanic is a helper function to handle panics with stack traces
@@ -112,7 +116,7 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 	case "update":
 		h.handleUpdate(ctx, w, id, req.ID, req.Data, req.Options)
 	case "delete":
-		h.handleDelete(ctx, w, id)
+		h.handleDelete(ctx, w, id, req.Data)
 	default:
 		logger.Error("Invalid operation: %s", req.Operation)
 		h.sendError(w, http.StatusBadRequest, "invalid_operation", "Invalid operation", nil)
@@ -286,13 +290,29 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 	schema := GetSchema(ctx)
 	entity := GetEntity(ctx)
 	tableName := GetTableName(ctx)
+	model := GetModel(ctx)
 
 	logger.Info("Creating records for %s.%s", schema, entity)
 
-	query := h.db.NewInsert().Table(tableName)
-
+	// Check if data contains nested relations or crud_request field
 	switch v := data.(type) {
 	case map[string]interface{}:
+		// Check if we should use nested processing
+		if h.shouldUseNestedProcessor(v, model) {
+			logger.Info("Using nested CUD processor for create operation")
+			result, err := h.nestedProcessor.ProcessNestedCUD(ctx, "insert", v, model, make(map[string]interface{}), tableName)
+			if err != nil {
+				logger.Error("Error in nested create: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "create_error", "Error creating record with nested data", err)
+				return
+			}
+			logger.Info("Successfully created record with nested data, ID: %v", result.ID)
+			h.sendResponse(w, result.Data, nil)
+			return
+		}
+
+		// Standard processing without nested relations
+		query := h.db.NewInsert().Table(tableName)
 		for key, value := range v {
 			query = query.Value(key, value)
 		}
@@ -306,6 +326,46 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 		h.sendResponse(w, v, nil)
 
 	case []map[string]interface{}:
+		// Check if any item needs nested processing
+		hasNestedData := false
+		for _, item := range v {
+			if h.shouldUseNestedProcessor(item, model) {
+				hasNestedData = true
+				break
+			}
+		}
+
+		if hasNestedData {
+			logger.Info("Using nested CUD processor for batch create with nested data")
+			results := make([]map[string]interface{}, 0, len(v))
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				// Temporarily swap the database to use transaction
+				originalDB := h.nestedProcessor
+				h.nestedProcessor = common.NewNestedCUDProcessor(tx, h.registry, h)
+				defer func() {
+					h.nestedProcessor = originalDB
+				}()
+
+				for _, item := range v {
+					result, err := h.nestedProcessor.ProcessNestedCUD(ctx, "insert", item, model, make(map[string]interface{}), tableName)
+					if err != nil {
+						return fmt.Errorf("failed to process item: %w", err)
+					}
+					results = append(results, result.Data)
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error creating records with nested data: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "create_error", "Error creating records with nested data", err)
+				return
+			}
+			logger.Info("Successfully created %d records with nested data", len(results))
+			h.sendResponse(w, results, nil)
+			return
+		}
+
+		// Standard batch insert without nested relations
 		err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 			for _, item := range v {
 				txQuery := tx.NewInsert().Table(tableName)
@@ -328,6 +388,50 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 
 	case []interface{}:
 		// Handle []interface{} type from JSON unmarshaling
+		// Check if any item needs nested processing
+		hasNestedData := false
+		for _, item := range v {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				if h.shouldUseNestedProcessor(itemMap, model) {
+					hasNestedData = true
+					break
+				}
+			}
+		}
+
+		if hasNestedData {
+			logger.Info("Using nested CUD processor for batch create with nested data ([]interface{})")
+			results := make([]interface{}, 0, len(v))
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				// Temporarily swap the database to use transaction
+				originalDB := h.nestedProcessor
+				h.nestedProcessor = common.NewNestedCUDProcessor(tx, h.registry, h)
+				defer func() {
+					h.nestedProcessor = originalDB
+				}()
+
+				for _, item := range v {
+					if itemMap, ok := item.(map[string]interface{}); ok {
+						result, err := h.nestedProcessor.ProcessNestedCUD(ctx, "insert", itemMap, model, make(map[string]interface{}), tableName)
+						if err != nil {
+							return fmt.Errorf("failed to process item: %w", err)
+						}
+						results = append(results, result.Data)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error creating records with nested data: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "create_error", "Error creating records with nested data", err)
+				return
+			}
+			logger.Info("Successfully created %d records with nested data", len(results))
+			h.sendResponse(w, results, nil)
+			return
+		}
+
+		// Standard batch insert without nested relations
 		list := make([]interface{}, 0)
 		err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 			for _, item := range v {
@@ -369,53 +473,210 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, url
 	schema := GetSchema(ctx)
 	entity := GetEntity(ctx)
 	tableName := GetTableName(ctx)
+	model := GetModel(ctx)
 
 	logger.Info("Updating records for %s.%s", schema, entity)
 
-	query := h.db.NewUpdate().Table(tableName)
-
 	switch updates := data.(type) {
 	case map[string]interface{}:
-		query = query.SetMap(updates)
+		// Determine the ID to use
+		var targetID interface{}
+		if urlID != "" {
+			targetID = urlID
+		} else if reqID != nil {
+			targetID = reqID
+		} else if updates["id"] != nil {
+			targetID = updates["id"]
+		}
+
+		// Check if we should use nested processing
+		if h.shouldUseNestedProcessor(updates, model) {
+			logger.Info("Using nested CUD processor for update operation")
+			// Ensure ID is in the data map
+			if targetID != nil {
+				updates["id"] = targetID
+			}
+			result, err := h.nestedProcessor.ProcessNestedCUD(ctx, "update", updates, model, make(map[string]interface{}), tableName)
+			if err != nil {
+				logger.Error("Error in nested update: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "update_error", "Error updating record with nested data", err)
+				return
+			}
+			logger.Info("Successfully updated record with nested data, rows: %d", result.AffectedRows)
+			h.sendResponse(w, result.Data, nil)
+			return
+		}
+
+		// Standard processing without nested relations
+		query := h.db.NewUpdate().Table(tableName).SetMap(updates)
+
+		// Apply conditions
+		if urlID != "" {
+			logger.Debug("Updating by URL ID: %s", urlID)
+			query = query.Where("id = ?", urlID)
+		} else if reqID != nil {
+			switch id := reqID.(type) {
+			case string:
+				logger.Debug("Updating by request ID: %s", id)
+				query = query.Where("id = ?", id)
+			case []string:
+				logger.Debug("Updating by multiple IDs: %v", id)
+				query = query.Where("id IN (?)", id)
+			}
+		}
+
+		result, err := query.Exec(ctx)
+		if err != nil {
+			logger.Error("Update error: %v", err)
+			h.sendError(w, http.StatusInternalServerError, "update_error", "Error updating record(s)", err)
+			return
+		}
+
+		if result.RowsAffected() == 0 {
+			logger.Warn("No records found to update")
+			h.sendError(w, http.StatusNotFound, "not_found", "No records found to update", nil)
+			return
+		}
+
+		logger.Info("Successfully updated %d records", result.RowsAffected())
+		h.sendResponse(w, data, nil)
+
+	case []map[string]interface{}:
+		// Batch update with array of objects
+		hasNestedData := false
+		for _, item := range updates {
+			if h.shouldUseNestedProcessor(item, model) {
+				hasNestedData = true
+				break
+			}
+		}
+
+		if hasNestedData {
+			logger.Info("Using nested CUD processor for batch update with nested data")
+			results := make([]map[string]interface{}, 0, len(updates))
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				// Temporarily swap the database to use transaction
+				originalDB := h.nestedProcessor
+				h.nestedProcessor = common.NewNestedCUDProcessor(tx, h.registry, h)
+				defer func() {
+					h.nestedProcessor = originalDB
+				}()
+
+				for _, item := range updates {
+					result, err := h.nestedProcessor.ProcessNestedCUD(ctx, "update", item, model, make(map[string]interface{}), tableName)
+					if err != nil {
+						return fmt.Errorf("failed to process item: %w", err)
+					}
+					results = append(results, result.Data)
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error updating records with nested data: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "update_error", "Error updating records with nested data", err)
+				return
+			}
+			logger.Info("Successfully updated %d records with nested data", len(results))
+			h.sendResponse(w, results, nil)
+			return
+		}
+
+		// Standard batch update without nested relations
+		err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+			for _, item := range updates {
+				if itemID, ok := item["id"]; ok {
+					txQuery := tx.NewUpdate().Table(tableName).SetMap(item).Where("id = ?", itemID)
+					if _, err := txQuery.Exec(ctx); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			logger.Error("Error updating records: %v", err)
+			h.sendError(w, http.StatusInternalServerError, "update_error", "Error updating records", err)
+			return
+		}
+		logger.Info("Successfully updated %d records", len(updates))
+		h.sendResponse(w, updates, nil)
+
+	case []interface{}:
+		// Batch update with []interface{}
+		hasNestedData := false
+		for _, item := range updates {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				if h.shouldUseNestedProcessor(itemMap, model) {
+					hasNestedData = true
+					break
+				}
+			}
+		}
+
+		if hasNestedData {
+			logger.Info("Using nested CUD processor for batch update with nested data ([]interface{})")
+			results := make([]interface{}, 0, len(updates))
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				// Temporarily swap the database to use transaction
+				originalDB := h.nestedProcessor
+				h.nestedProcessor = common.NewNestedCUDProcessor(tx, h.registry, h)
+				defer func() {
+					h.nestedProcessor = originalDB
+				}()
+
+				for _, item := range updates {
+					if itemMap, ok := item.(map[string]interface{}); ok {
+						result, err := h.nestedProcessor.ProcessNestedCUD(ctx, "update", itemMap, model, make(map[string]interface{}), tableName)
+						if err != nil {
+							return fmt.Errorf("failed to process item: %w", err)
+						}
+						results = append(results, result.Data)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error updating records with nested data: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "update_error", "Error updating records with nested data", err)
+				return
+			}
+			logger.Info("Successfully updated %d records with nested data", len(results))
+			h.sendResponse(w, results, nil)
+			return
+		}
+
+		// Standard batch update without nested relations
+		list := make([]interface{}, 0)
+		err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+			for _, item := range updates {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					if itemID, ok := itemMap["id"]; ok {
+						txQuery := tx.NewUpdate().Table(tableName).SetMap(itemMap).Where("id = ?", itemID)
+						if _, err := txQuery.Exec(ctx); err != nil {
+							return err
+						}
+						list = append(list, item)
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			logger.Error("Error updating records: %v", err)
+			h.sendError(w, http.StatusInternalServerError, "update_error", "Error updating records", err)
+			return
+		}
+		logger.Info("Successfully updated %d records", len(list))
+		h.sendResponse(w, list, nil)
+
 	default:
 		logger.Error("Invalid data type for update operation: %T", data)
 		h.sendError(w, http.StatusBadRequest, "invalid_data", "Invalid data type for update operation", nil)
 		return
 	}
-
-	// Apply conditions
-	if urlID != "" {
-		logger.Debug("Updating by URL ID: %s", urlID)
-		query = query.Where("id = ?", urlID)
-	} else if reqID != nil {
-		switch id := reqID.(type) {
-		case string:
-			logger.Debug("Updating by request ID: %s", id)
-			query = query.Where("id = ?", id)
-		case []string:
-			logger.Debug("Updating by multiple IDs: %v", id)
-			query = query.Where("id IN (?)", id)
-		}
-	}
-
-	result, err := query.Exec(ctx)
-	if err != nil {
-		logger.Error("Update error: %v", err)
-		h.sendError(w, http.StatusInternalServerError, "update_error", "Error updating record(s)", err)
-		return
-	}
-
-	if result.RowsAffected() == 0 {
-		logger.Warn("No records found to update")
-		h.sendError(w, http.StatusNotFound, "not_found", "No records found to update", nil)
-		return
-	}
-
-	logger.Info("Successfully updated %d records", result.RowsAffected())
-	h.sendResponse(w, data, nil)
 }
 
-func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id string) {
+func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id string, data interface{}) {
 	// Capture panics and return error response
 	defer func() {
 		if err := recover(); err != nil {
@@ -429,6 +690,105 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 
 	logger.Info("Deleting records from %s.%s", schema, entity)
 
+	// Handle batch delete from request data
+	if data != nil {
+		switch v := data.(type) {
+		case []string:
+			// Array of IDs as strings
+			logger.Info("Batch delete with %d IDs ([]string)", len(v))
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				for _, itemID := range v {
+					query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+					if _, err := query.Exec(ctx); err != nil {
+						return fmt.Errorf("failed to delete record %s: %w", itemID, err)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error in batch delete: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "delete_error", "Error deleting records", err)
+				return
+			}
+			logger.Info("Successfully deleted %d records", len(v))
+			h.sendResponse(w, map[string]interface{}{"deleted": len(v)}, nil)
+			return
+
+		case []interface{}:
+			// Array of IDs or objects with ID field
+			logger.Info("Batch delete with %d items ([]interface{})", len(v))
+			deletedCount := 0
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				for _, item := range v {
+					var itemID interface{}
+
+					// Check if item is a string ID or object with id field
+					if idStr, ok := item.(string); ok {
+						itemID = idStr
+					} else if itemMap, ok := item.(map[string]interface{}); ok {
+						itemID = itemMap["id"]
+					} else {
+						// Try to use the item directly as ID
+						itemID = item
+					}
+
+					if itemID == nil {
+						continue // Skip items without ID
+					}
+
+					query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+					result, err := query.Exec(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to delete record %v: %w", itemID, err)
+					}
+					deletedCount += int(result.RowsAffected())
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error in batch delete: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "delete_error", "Error deleting records", err)
+				return
+			}
+			logger.Info("Successfully deleted %d records", deletedCount)
+			h.sendResponse(w, map[string]interface{}{"deleted": deletedCount}, nil)
+			return
+
+		case []map[string]interface{}:
+			// Array of objects with id field
+			logger.Info("Batch delete with %d items ([]map[string]interface{})", len(v))
+			deletedCount := 0
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				for _, item := range v {
+					if itemID, ok := item["id"]; ok && itemID != nil {
+						query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+						result, err := query.Exec(ctx)
+						if err != nil {
+							return fmt.Errorf("failed to delete record %v: %w", itemID, err)
+						}
+						deletedCount += int(result.RowsAffected())
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error in batch delete: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "delete_error", "Error deleting records", err)
+				return
+			}
+			logger.Info("Successfully deleted %d records", deletedCount)
+			h.sendResponse(w, map[string]interface{}{"deleted": deletedCount}, nil)
+			return
+
+		case map[string]interface{}:
+			// Single object with id field
+			if itemID, ok := v["id"]; ok && itemID != nil {
+				id = fmt.Sprintf("%v", itemID)
+			}
+		}
+	}
+
+	// Single delete with URL ID
 	if id == "" {
 		logger.Error("Delete operation requires an ID")
 		h.sendError(w, http.StatusBadRequest, "missing_id", "Delete operation requires an ID", nil)
@@ -636,6 +996,12 @@ func (h *Handler) RegisterModel(schema, name string, model interface{}) error {
 	return h.registry.RegisterModel(fullname, model)
 }
 
+// shouldUseNestedProcessor determines if we should use nested CUD processing
+// It checks if the data contains nested relations or a crud_request field
+func (h *Handler) shouldUseNestedProcessor(data map[string]interface{}, model interface{}) bool {
+	return common.ShouldUseNestedProcessor(data, model, h)
+}
+
 // Helper functions
 
 func getColumnType(field reflect.StructField) string {
@@ -689,6 +1055,24 @@ func isNullable(field reflect.StructField) bool {
 }
 
 // Preload support functions
+
+// GetRelationshipInfo implements common.RelationshipInfoProvider interface
+func (h *Handler) GetRelationshipInfo(modelType reflect.Type, relationName string) *common.RelationshipInfo {
+	info := h.getRelationshipInfo(modelType, relationName)
+	if info == nil {
+		return nil
+	}
+	// Convert internal type to common type
+	return &common.RelationshipInfo{
+		FieldName:    info.fieldName,
+		JSONName:     info.jsonName,
+		RelationType: info.relationType,
+		ForeignKey:   info.foreignKey,
+		References:   info.references,
+		JoinTable:    info.joinTable,
+		RelatedModel: info.relatedModel,
+	}
+}
 
 type relationshipInfo struct {
 	fieldName    string

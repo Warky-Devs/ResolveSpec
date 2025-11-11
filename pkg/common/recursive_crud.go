@@ -1,0 +1,417 @@
+package common
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/bitechdev/ResolveSpec/pkg/logger"
+)
+
+// CRUDRequestProvider interface for models that provide CRUD request strings
+type CRUDRequestProvider interface {
+	GetRequest() string
+}
+
+// RelationshipInfoProvider interface for handlers that can provide relationship info
+type RelationshipInfoProvider interface {
+	GetRelationshipInfo(modelType reflect.Type, relationName string) *RelationshipInfo
+}
+
+// RelationshipInfo contains information about a model relationship
+type RelationshipInfo struct {
+	FieldName    string
+	JSONName     string
+	RelationType string // "belongsTo", "hasMany", "hasOne", "many2many"
+	ForeignKey   string
+	References   string
+	JoinTable    string
+	RelatedModel interface{}
+}
+
+// NestedCUDProcessor handles recursive processing of nested object graphs
+type NestedCUDProcessor struct {
+	db                 Database
+	registry           ModelRegistry
+	relationshipHelper RelationshipInfoProvider
+}
+
+// NewNestedCUDProcessor creates a new nested CUD processor
+func NewNestedCUDProcessor(db Database, registry ModelRegistry, relationshipHelper RelationshipInfoProvider) *NestedCUDProcessor {
+	return &NestedCUDProcessor{
+		db:                 db,
+		registry:           registry,
+		relationshipHelper: relationshipHelper,
+	}
+}
+
+// ProcessResult contains the result of processing a CUD operation
+type ProcessResult struct {
+	ID           interface{}            // The ID of the processed record
+	AffectedRows int64                  // Number of rows affected
+	Data         map[string]interface{} // The processed data
+	RelationData map[string]interface{} // Data from processed relations
+}
+
+// ProcessNestedCUD recursively processes nested object graphs for Create, Update, Delete operations
+// with automatic foreign key resolution
+func (p *NestedCUDProcessor) ProcessNestedCUD(
+	ctx context.Context,
+	operation string, // "insert", "update", or "delete"
+	data map[string]interface{},
+	model interface{},
+	parentIDs map[string]interface{}, // Parent IDs for foreign key resolution
+	tableName string,
+) (*ProcessResult, error) {
+	logger.Info("Processing nested CUD: operation=%s, table=%s", operation, tableName)
+
+	result := &ProcessResult{
+		Data:         make(map[string]interface{}),
+		RelationData: make(map[string]interface{}),
+	}
+
+	// Check if data has a crud_request field that overrides the operation
+	if requestOp := p.extractCRUDRequest(data); requestOp != "" {
+		logger.Debug("Found crud_request override: %s", requestOp)
+		operation = requestOp
+	}
+
+	// Get model type for reflection
+	modelType := reflect.TypeOf(model)
+	for modelType != nil && (modelType.Kind() == reflect.Ptr || modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array) {
+		modelType = modelType.Elem()
+	}
+
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("model must be a struct type, got %v", modelType)
+	}
+
+	// Separate relation fields from regular fields
+	relationFields := make(map[string]*RelationshipInfo)
+	regularData := make(map[string]interface{})
+
+	for key, value := range data {
+		// Skip crud_request field in actual data processing
+		if key == "crud_request" {
+			continue
+		}
+
+		// Check if this field is a relation
+		relInfo := p.relationshipHelper.GetRelationshipInfo(modelType, key)
+		if relInfo != nil {
+			relationFields[key] = relInfo
+			result.RelationData[key] = value
+		} else {
+			regularData[key] = value
+		}
+	}
+
+	// Inject parent IDs for foreign key resolution
+	p.injectForeignKeys(regularData, modelType, parentIDs)
+
+	// Process based on operation
+	switch strings.ToLower(operation) {
+	case "insert", "create":
+		id, err := p.processInsert(ctx, regularData, tableName)
+		if err != nil {
+			return nil, fmt.Errorf("insert failed: %w", err)
+		}
+		result.ID = id
+		result.AffectedRows = 1
+		result.Data = regularData
+
+		// Process child relations after parent insert (to get parent ID)
+		if err := p.processChildRelations(ctx, "insert", id, relationFields, result.RelationData, modelType); err != nil {
+			return nil, fmt.Errorf("failed to process child relations: %w", err)
+		}
+
+	case "update":
+		rows, err := p.processUpdate(ctx, regularData, tableName, data["id"])
+		if err != nil {
+			return nil, fmt.Errorf("update failed: %w", err)
+		}
+		result.ID = data["id"]
+		result.AffectedRows = rows
+		result.Data = regularData
+
+		// Process child relations for update
+		if err := p.processChildRelations(ctx, "update", data["id"], relationFields, result.RelationData, modelType); err != nil {
+			return nil, fmt.Errorf("failed to process child relations: %w", err)
+		}
+
+	case "delete":
+		// Process child relations first (for referential integrity)
+		if err := p.processChildRelations(ctx, "delete", data["id"], relationFields, result.RelationData, modelType); err != nil {
+			return nil, fmt.Errorf("failed to process child relations before delete: %w", err)
+		}
+
+		rows, err := p.processDelete(ctx, tableName, data["id"])
+		if err != nil {
+			return nil, fmt.Errorf("delete failed: %w", err)
+		}
+		result.ID = data["id"]
+		result.AffectedRows = rows
+		result.Data = regularData
+
+	default:
+		return nil, fmt.Errorf("unsupported operation: %s", operation)
+	}
+
+	logger.Info("Nested CUD completed: operation=%s, id=%v, rows=%d", operation, result.ID, result.AffectedRows)
+	return result, nil
+}
+
+// extractCRUDRequest extracts the crud_request field from data if present
+func (p *NestedCUDProcessor) extractCRUDRequest(data map[string]interface{}) string {
+	if request, ok := data["crud_request"]; ok {
+		if requestStr, ok := request.(string); ok {
+			return strings.ToLower(strings.TrimSpace(requestStr))
+		}
+	}
+	return ""
+}
+
+// injectForeignKeys injects parent IDs into data for foreign key fields
+func (p *NestedCUDProcessor) injectForeignKeys(data map[string]interface{}, modelType reflect.Type, parentIDs map[string]interface{}) {
+	if len(parentIDs) == 0 {
+		return
+	}
+
+	// Iterate through model fields to find foreign key fields
+	for i := 0; i < modelType.NumField(); i++ {
+		field := modelType.Field(i)
+		jsonTag := field.Tag.Get("json")
+		jsonName := strings.Split(jsonTag, ",")[0]
+
+		// Check if this field is a foreign key and we have a parent ID for it
+		// Common patterns: DepartmentID, ManagerID, ProjectID, etc.
+		for parentKey, parentID := range parentIDs {
+			// Match field name patterns like "department_id" with parent key "department"
+			if strings.EqualFold(jsonName, parentKey+"_id") ||
+				strings.EqualFold(jsonName, parentKey+"id") ||
+				strings.EqualFold(field.Name, parentKey+"ID") {
+				// Only inject if not already present
+				if _, exists := data[jsonName]; !exists {
+					logger.Debug("Injecting foreign key: %s = %v", jsonName, parentID)
+					data[jsonName] = parentID
+				}
+			}
+		}
+	}
+}
+
+// processInsert handles insert operation
+func (p *NestedCUDProcessor) processInsert(
+	ctx context.Context,
+	data map[string]interface{},
+	tableName string,
+) (interface{}, error) {
+	logger.Debug("Inserting into %s with data: %+v", tableName, data)
+
+	query := p.db.NewInsert().Table(tableName)
+
+	for key, value := range data {
+		query = query.Value(key, value)
+	}
+
+	// Add RETURNING clause to get the inserted ID
+	query = query.Returning("id")
+
+	result, err := query.Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("insert exec failed: %w", err)
+	}
+
+	// Try to get the ID
+	var id interface{}
+	if lastID, err := result.LastInsertId(); err == nil && lastID > 0 {
+		id = lastID
+	} else if data["id"] != nil {
+		id = data["id"]
+	}
+
+	logger.Debug("Insert successful, ID: %v, rows affected: %d", id, result.RowsAffected())
+	return id, nil
+}
+
+// processUpdate handles update operation
+func (p *NestedCUDProcessor) processUpdate(
+	ctx context.Context,
+	data map[string]interface{},
+	tableName string,
+	id interface{},
+) (int64, error) {
+	if id == nil {
+		return 0, fmt.Errorf("update requires an ID")
+	}
+
+	logger.Debug("Updating %s with ID %v, data: %+v", tableName, id, data)
+
+	query := p.db.NewUpdate().Table(tableName).SetMap(data).Where("id = ?", id)
+
+	result, err := query.Exec(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("update exec failed: %w", err)
+	}
+
+	rows := result.RowsAffected()
+	logger.Debug("Update successful, rows affected: %d", rows)
+	return rows, nil
+}
+
+// processDelete handles delete operation
+func (p *NestedCUDProcessor) processDelete(ctx context.Context, tableName string, id interface{}) (int64, error) {
+	if id == nil {
+		return 0, fmt.Errorf("delete requires an ID")
+	}
+
+	logger.Debug("Deleting from %s with ID %v", tableName, id)
+
+	query := p.db.NewDelete().Table(tableName).Where("id = ?", id)
+
+	result, err := query.Exec(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("delete exec failed: %w", err)
+	}
+
+	rows := result.RowsAffected()
+	logger.Debug("Delete successful, rows affected: %d", rows)
+	return rows, nil
+}
+
+// processChildRelations recursively processes child relations
+func (p *NestedCUDProcessor) processChildRelations(
+	ctx context.Context,
+	operation string,
+	parentID interface{},
+	relationFields map[string]*RelationshipInfo,
+	relationData map[string]interface{},
+	parentModelType reflect.Type,
+) error {
+	for relationName, relInfo := range relationFields {
+		relationValue, exists := relationData[relationName]
+		if !exists || relationValue == nil {
+			continue
+		}
+
+		logger.Debug("Processing relation: %s, type: %s", relationName, relInfo.RelationType)
+
+		// Get the related model
+		field, found := parentModelType.FieldByName(relInfo.FieldName)
+		if !found {
+			logger.Warn("Field %s not found in model", relInfo.FieldName)
+			continue
+		}
+
+		// Get the model type for the relation
+		relatedModelType := field.Type
+		if relatedModelType.Kind() == reflect.Slice {
+			relatedModelType = relatedModelType.Elem()
+		}
+		if relatedModelType.Kind() == reflect.Ptr {
+			relatedModelType = relatedModelType.Elem()
+		}
+
+		// Create an instance of the related model
+		relatedModel := reflect.New(relatedModelType).Elem().Interface()
+
+		// Get table name for related model
+		relatedTableName := p.getTableNameForModel(relatedModel, relInfo.JSONName)
+
+		// Prepare parent IDs for foreign key injection
+		parentIDs := make(map[string]interface{})
+		if relInfo.ForeignKey != "" {
+			// Extract the base name from foreign key (e.g., "DepartmentID" -> "Department")
+			baseName := strings.TrimSuffix(relInfo.ForeignKey, "ID")
+			baseName = strings.TrimSuffix(strings.ToLower(baseName), "_id")
+			parentIDs[baseName] = parentID
+		}
+
+		// Process based on relation type and data structure
+		switch v := relationValue.(type) {
+		case map[string]interface{}:
+			// Single related object
+			_, err := p.ProcessNestedCUD(ctx, operation, v, relatedModel, parentIDs, relatedTableName)
+			if err != nil {
+				return fmt.Errorf("failed to process relation %s: %w", relationName, err)
+			}
+
+		case []interface{}:
+			// Multiple related objects
+			for i, item := range v {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					_, err := p.ProcessNestedCUD(ctx, operation, itemMap, relatedModel, parentIDs, relatedTableName)
+					if err != nil {
+						return fmt.Errorf("failed to process relation %s[%d]: %w", relationName, i, err)
+					}
+				}
+			}
+
+		case []map[string]interface{}:
+			// Multiple related objects (typed slice)
+			for i, itemMap := range v {
+				_, err := p.ProcessNestedCUD(ctx, operation, itemMap, relatedModel, parentIDs, relatedTableName)
+				if err != nil {
+					return fmt.Errorf("failed to process relation %s[%d]: %w", relationName, i, err)
+				}
+			}
+
+		default:
+			logger.Warn("Unsupported relation data type for %s: %T", relationName, relationValue)
+		}
+	}
+
+	return nil
+}
+
+// getTableNameForModel gets the table name for a model
+func (p *NestedCUDProcessor) getTableNameForModel(model interface{}, defaultName string) string {
+	if provider, ok := model.(TableNameProvider); ok {
+		tableName := provider.TableName()
+		if tableName != "" {
+			return tableName
+		}
+	}
+	return defaultName
+}
+
+// ShouldUseNestedProcessor determines if we should use nested CUD processing
+// It checks if the data contains nested relations or a crud_request field
+func ShouldUseNestedProcessor(data map[string]interface{}, model interface{}, relationshipHelper RelationshipInfoProvider) bool {
+	// Check for crud_request field
+	if _, hasCRUDRequest := data["crud_request"]; hasCRUDRequest {
+		return true
+	}
+
+	// Get model type
+	modelType := reflect.TypeOf(model)
+	for modelType != nil && (modelType.Kind() == reflect.Ptr || modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array) {
+		modelType = modelType.Elem()
+	}
+
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		return false
+	}
+
+	// Check if data contains any fields that are relations (nested objects or arrays)
+	for key, value := range data {
+		// Skip crud_request and regular scalar fields
+		if key == "crud_request" {
+			continue
+		}
+
+		// Check if this field is a relation in the model
+		relInfo := relationshipHelper.GetRelationshipInfo(modelType, key)
+		if relInfo != nil {
+			// Check if the value is actually nested data (object or array)
+			switch value.(type) {
+			case map[string]interface{}, []interface{}, []map[string]interface{}:
+				logger.Debug("Found nested relation field: %s", key)
+				return true
+			}
+		}
+	}
+
+	return false
+}

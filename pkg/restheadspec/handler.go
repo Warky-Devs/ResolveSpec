@@ -17,18 +17,22 @@ import (
 // Handler handles API requests using database and model abstractions
 // This handler reads filters, columns, and options from HTTP headers
 type Handler struct {
-	db       common.Database
-	registry common.ModelRegistry
-	hooks    *HookRegistry
+	db              common.Database
+	registry        common.ModelRegistry
+	hooks           *HookRegistry
+	nestedProcessor *common.NestedCUDProcessor
 }
 
 // NewHandler creates a new API handler with database and registry abstractions
 func NewHandler(db common.Database, registry common.ModelRegistry) *Handler {
-	return &Handler{
+	handler := &Handler{
 		db:       db,
 		registry: registry,
 		hooks:    NewHookRegistry(),
 	}
+	// Initialize nested processor
+	handler.nestedProcessor = common.NewNestedCUDProcessor(db, registry, handler)
+	return handler
 }
 
 // Hooks returns the hook registry for this handler
@@ -146,7 +150,16 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 		}
 		h.handleUpdate(ctx, w, id, nil, data, options)
 	case "DELETE":
-		h.handleDelete(ctx, w, id)
+		// Try to read body for batch delete support
+		var data interface{}
+		body, err := r.Body()
+		if err == nil && len(body) > 0 {
+			if err := json.Unmarshal(body, &data); err != nil {
+				logger.Warn("Failed to decode delete request body (will try single delete): %v", err)
+				data = nil
+			}
+		}
+		h.handleDelete(ctx, w, id, data)
 	default:
 		logger.Error("Invalid HTTP method: %s", method)
 		h.sendError(w, http.StatusMethodNotAllowed, "invalid_method", "Invalid HTTP method", nil)
@@ -456,6 +469,22 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 
 	logger.Info("Creating record in %s.%s", schema, entity)
 
+	// Check if data is a single map with nested relations
+	if dataMap, ok := data.(map[string]interface{}); ok {
+		if h.shouldUseNestedProcessor(dataMap, model) {
+			logger.Info("Using nested CUD processor for create operation")
+			result, err := h.nestedProcessor.ProcessNestedCUD(ctx, "insert", dataMap, model, make(map[string]interface{}), tableName)
+			if err != nil {
+				logger.Error("Error in nested create: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "create_error", "Error creating record with nested data", err)
+				return
+			}
+			logger.Info("Successfully created record with nested data, ID: %v", result.ID)
+			h.sendResponse(w, result.Data, nil)
+			return
+		}
+	}
+
 	// Execute BeforeCreate hooks
 	hookCtx := &HookContext{
 		Context:   ctx,
@@ -483,6 +512,63 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 	if dataValue.Kind() == reflect.Slice || dataValue.Kind() == reflect.Array {
 		logger.Debug("Batch creation detected, count: %d", dataValue.Len())
 
+		// Check if any item needs nested processing
+		hasNestedData := false
+		for i := 0; i < dataValue.Len(); i++ {
+			item := dataValue.Index(i).Interface()
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				if h.shouldUseNestedProcessor(itemMap, model) {
+					hasNestedData = true
+					break
+				}
+			}
+		}
+
+		if hasNestedData {
+			logger.Info("Using nested CUD processor for batch create with nested data")
+			results := make([]interface{}, 0, dataValue.Len())
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				// Temporarily swap the database to use transaction
+				originalDB := h.nestedProcessor
+				h.nestedProcessor = common.NewNestedCUDProcessor(tx, h.registry, h)
+				defer func() {
+					h.nestedProcessor = originalDB
+				}()
+
+				for i := 0; i < dataValue.Len(); i++ {
+					item := dataValue.Index(i).Interface()
+					if itemMap, ok := item.(map[string]interface{}); ok {
+						result, err := h.nestedProcessor.ProcessNestedCUD(ctx, "insert", itemMap, model, make(map[string]interface{}), tableName)
+						if err != nil {
+							return fmt.Errorf("failed to process item: %w", err)
+						}
+						results = append(results, result.Data)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error creating records with nested data: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "create_error", "Error creating records with nested data", err)
+				return
+			}
+
+			// Execute AfterCreate hooks
+			hookCtx.Result = map[string]interface{}{"created": len(results), "data": results}
+			hookCtx.Error = nil
+
+			if err := h.hooks.Execute(AfterCreate, hookCtx); err != nil {
+				logger.Error("AfterCreate hook failed: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "hook_error", "Hook execution failed", err)
+				return
+			}
+
+			logger.Info("Successfully created %d records with nested data", len(results))
+			h.sendResponse(w, results, nil)
+			return
+		}
+
+		// Standard batch insert without nested relations
 		// Use transaction for batch insert
 		err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 			for i := 0; i < dataValue.Len(); i++ {
@@ -613,6 +699,46 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 
 	logger.Info("Updating record in %s.%s", schema, entity)
 
+	// Convert data to map first for nested processor check
+	dataMap, ok := data.(map[string]interface{})
+	if !ok {
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			logger.Error("Error marshaling data: %v", err)
+			h.sendError(w, http.StatusBadRequest, "invalid_data", "Invalid data format", err)
+			return
+		}
+		if err := json.Unmarshal(jsonData, &dataMap); err != nil {
+			logger.Error("Error unmarshaling data: %v", err)
+			h.sendError(w, http.StatusBadRequest, "invalid_data", "Invalid data format", err)
+			return
+		}
+	}
+
+	// Check if we should use nested processing
+	if h.shouldUseNestedProcessor(dataMap, model) {
+		logger.Info("Using nested CUD processor for update operation")
+		// Ensure ID is in the data map
+		var targetID interface{}
+		if id != "" {
+			targetID = id
+		} else if idPtr != nil {
+			targetID = *idPtr
+		}
+		if targetID != nil {
+			dataMap["id"] = targetID
+		}
+		result, err := h.nestedProcessor.ProcessNestedCUD(ctx, "update", dataMap, model, make(map[string]interface{}), tableName)
+		if err != nil {
+			logger.Error("Error in nested update: %v", err)
+			h.sendError(w, http.StatusInternalServerError, "update_error", "Error updating record with nested data", err)
+			return
+		}
+		logger.Info("Successfully updated record with nested data, rows: %d", result.AffectedRows)
+		h.sendResponse(w, result.Data, nil)
+		return
+	}
+
 	// Execute BeforeUpdate hooks
 	hookCtx := &HookContext{
 		Context:   ctx,
@@ -636,8 +762,8 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 	// Use potentially modified data from hook context
 	data = hookCtx.Data
 
-	// Convert data to map
-	dataMap, ok := data.(map[string]interface{})
+	// Convert data to map (again if modified by hooks)
+	dataMap, ok = data.(map[string]interface{})
 	if !ok {
 		jsonData, err := json.Marshal(data)
 		if err != nil {
@@ -700,7 +826,7 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 	h.sendResponse(w, responseData, nil)
 }
 
-func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id string) {
+func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id string, data interface{}) {
 	// Capture panics and return error response
 	defer func() {
 		if err := recover(); err != nil {
@@ -713,8 +839,186 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 	tableName := GetTableName(ctx)
 	model := GetModel(ctx)
 
-	logger.Info("Deleting record from %s.%s", schema, entity)
+	logger.Info("Deleting record(s) from %s.%s", schema, entity)
 
+	// Handle batch delete from request data
+	if data != nil {
+		switch v := data.(type) {
+		case []string:
+			// Array of IDs as strings
+			logger.Info("Batch delete with %d IDs ([]string)", len(v))
+			deletedCount := 0
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				for _, itemID := range v {
+					// Execute hooks for each item
+					hookCtx := &HookContext{
+						Context:   ctx,
+						Handler:   h,
+						Schema:    schema,
+						Entity:    entity,
+						TableName: tableName,
+						Model:     model,
+						ID:        itemID,
+						Writer:    w,
+					}
+
+					if err := h.hooks.Execute(BeforeDelete, hookCtx); err != nil {
+						logger.Warn("BeforeDelete hook failed for ID %s: %v", itemID, err)
+						continue
+					}
+
+					query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+
+					result, err := query.Exec(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to delete record %s: %w", itemID, err)
+					}
+					deletedCount += int(result.RowsAffected())
+
+					// Execute AfterDelete hook
+					hookCtx.Result = map[string]interface{}{"deleted": result.RowsAffected()}
+					hookCtx.Error = nil
+					if err := h.hooks.Execute(AfterDelete, hookCtx); err != nil {
+						logger.Warn("AfterDelete hook failed for ID %s: %v", itemID, err)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error in batch delete: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "delete_error", "Error deleting records", err)
+				return
+			}
+			logger.Info("Successfully deleted %d records", deletedCount)
+			h.sendResponse(w, map[string]interface{}{"deleted": deletedCount}, nil)
+			return
+
+		case []interface{}:
+			// Array of IDs or objects with ID field
+			logger.Info("Batch delete with %d items ([]interface{})", len(v))
+			deletedCount := 0
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				for _, item := range v {
+					var itemID interface{}
+
+					// Check if item is a string ID or object with id field
+					if idStr, ok := item.(string); ok {
+						itemID = idStr
+					} else if itemMap, ok := item.(map[string]interface{}); ok {
+						itemID = itemMap["id"]
+					} else {
+						itemID = item
+					}
+
+					if itemID == nil {
+						continue
+					}
+
+					itemIDStr := fmt.Sprintf("%v", itemID)
+
+					// Execute hooks for each item
+					hookCtx := &HookContext{
+						Context:   ctx,
+						Handler:   h,
+						Schema:    schema,
+						Entity:    entity,
+						TableName: tableName,
+						Model:     model,
+						ID:        itemIDStr,
+						Writer:    w,
+					}
+
+					if err := h.hooks.Execute(BeforeDelete, hookCtx); err != nil {
+						logger.Warn("BeforeDelete hook failed for ID %v: %v", itemID, err)
+						continue
+					}
+
+					query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+					result, err := query.Exec(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to delete record %v: %w", itemID, err)
+					}
+					deletedCount += int(result.RowsAffected())
+
+					// Execute AfterDelete hook
+					hookCtx.Result = map[string]interface{}{"deleted": result.RowsAffected()}
+					hookCtx.Error = nil
+					if err := h.hooks.Execute(AfterDelete, hookCtx); err != nil {
+						logger.Warn("AfterDelete hook failed for ID %v: %v", itemID, err)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error in batch delete: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "delete_error", "Error deleting records", err)
+				return
+			}
+			logger.Info("Successfully deleted %d records", deletedCount)
+			h.sendResponse(w, map[string]interface{}{"deleted": deletedCount}, nil)
+			return
+
+		case []map[string]interface{}:
+			// Array of objects with id field
+			logger.Info("Batch delete with %d items ([]map[string]interface{})", len(v))
+			deletedCount := 0
+			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
+				for _, item := range v {
+					if itemID, ok := item["id"]; ok && itemID != nil {
+						itemIDStr := fmt.Sprintf("%v", itemID)
+
+						// Execute hooks for each item
+						hookCtx := &HookContext{
+							Context:   ctx,
+							Handler:   h,
+							Schema:    schema,
+							Entity:    entity,
+							TableName: tableName,
+							Model:     model,
+							ID:        itemIDStr,
+							Writer:    w,
+						}
+
+						if err := h.hooks.Execute(BeforeDelete, hookCtx); err != nil {
+							logger.Warn("BeforeDelete hook failed for ID %v: %v", itemID, err)
+							continue
+						}
+
+						query := tx.NewDelete().Table(tableName).Where("id = ?", itemID)
+						result, err := query.Exec(ctx)
+						if err != nil {
+							return fmt.Errorf("failed to delete record %v: %w", itemID, err)
+						}
+						deletedCount += int(result.RowsAffected())
+
+						// Execute AfterDelete hook
+						hookCtx.Result = map[string]interface{}{"deleted": result.RowsAffected()}
+						hookCtx.Error = nil
+						if err := h.hooks.Execute(AfterDelete, hookCtx); err != nil {
+							logger.Warn("AfterDelete hook failed for ID %v: %v", itemID, err)
+						}
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				logger.Error("Error in batch delete: %v", err)
+				h.sendError(w, http.StatusInternalServerError, "delete_error", "Error deleting records", err)
+				return
+			}
+			logger.Info("Successfully deleted %d records", deletedCount)
+			h.sendResponse(w, map[string]interface{}{"deleted": deletedCount}, nil)
+			return
+
+		case map[string]interface{}:
+			// Single object with id field
+			if itemID, ok := v["id"]; ok && itemID != nil {
+				id = fmt.Sprintf("%v", itemID)
+			}
+		}
+	}
+
+	// Single delete with URL ID
 	// Execute BeforeDelete hooks
 	hookCtx := &HookContext{
 		Context:   ctx,
@@ -1317,4 +1621,92 @@ func filterExtendedOptions(validator *common.ColumnValidator, options ExtendedRe
 	filtered.Expand = filteredExpands
 
 	return filtered
+}
+
+// shouldUseNestedProcessor determines if we should use nested CUD processing
+// It checks if the data contains nested relations or a crud_request field
+func (h *Handler) shouldUseNestedProcessor(data map[string]interface{}, model interface{}) bool {
+	return common.ShouldUseNestedProcessor(data, model, h)
+}
+
+// Relationship support functions for nested CUD processing
+
+// GetRelationshipInfo implements common.RelationshipInfoProvider interface
+func (h *Handler) GetRelationshipInfo(modelType reflect.Type, relationName string) *common.RelationshipInfo {
+	info := h.getRelationshipInfo(modelType, relationName)
+	if info == nil {
+		return nil
+	}
+	// Convert internal type to common type
+	return &common.RelationshipInfo{
+		FieldName:    info.fieldName,
+		JSONName:     info.jsonName,
+		RelationType: info.relationType,
+		ForeignKey:   info.foreignKey,
+		References:   info.references,
+		JoinTable:    info.joinTable,
+		RelatedModel: info.relatedModel,
+	}
+}
+
+type relationshipInfo struct {
+	fieldName    string
+	jsonName     string
+	relationType string // "belongsTo", "hasMany", "hasOne", "many2many"
+	foreignKey   string
+	references   string
+	joinTable    string
+	relatedModel interface{}
+}
+
+func (h *Handler) getRelationshipInfo(modelType reflect.Type, relationName string) *relationshipInfo {
+	// Ensure we have a struct type
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		logger.Warn("Cannot get relationship info from non-struct type: %v", modelType)
+		return nil
+	}
+
+	for i := 0; i < modelType.NumField(); i++ {
+		field := modelType.Field(i)
+		jsonTag := field.Tag.Get("json")
+		jsonName := strings.Split(jsonTag, ",")[0]
+
+		if jsonName == relationName {
+			gormTag := field.Tag.Get("gorm")
+			info := &relationshipInfo{
+				fieldName: field.Name,
+				jsonName:  jsonName,
+			}
+
+			// Parse GORM tag to determine relationship type and keys
+			if strings.Contains(gormTag, "foreignKey") {
+				info.foreignKey = h.extractTagValue(gormTag, "foreignKey")
+				info.references = h.extractTagValue(gormTag, "references")
+
+				// Determine if it's belongsTo or hasMany/hasOne
+				if field.Type.Kind() == reflect.Slice {
+					info.relationType = "hasMany"
+				} else if field.Type.Kind() == reflect.Ptr || field.Type.Kind() == reflect.Struct {
+					info.relationType = "belongsTo"
+				}
+			} else if strings.Contains(gormTag, "many2many") {
+				info.relationType = "many2many"
+				info.joinTable = h.extractTagValue(gormTag, "many2many")
+			}
+
+			return info
+		}
+	}
+	return nil
+}
+
+func (h *Handler) extractTagValue(tag, key string) string {
+	parts := strings.Split(tag, ";")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, key+":") {
+			return strings.TrimPrefix(part, key+":")
+		}
+	}
+	return ""
 }
