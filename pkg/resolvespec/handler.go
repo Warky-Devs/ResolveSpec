@@ -481,11 +481,12 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, url
 	case map[string]interface{}:
 		// Determine the ID to use
 		var targetID interface{}
-		if urlID != "" {
+		switch {
+		case urlID != "":
 			targetID = urlID
-		} else if reqID != nil {
+		case reqID != nil:
 			targetID = reqID
-		} else if updates["id"] != nil {
+		case updates["id"] != nil:
 			targetID = updates["id"]
 		}
 
@@ -723,11 +724,12 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 					var itemID interface{}
 
 					// Check if item is a string ID or object with id field
-					if idStr, ok := item.(string); ok {
-						itemID = idStr
-					} else if itemMap, ok := item.(map[string]interface{}); ok {
-						itemID = itemMap["id"]
-					} else {
+					switch v := item.(type) {
+					case string:
+						itemID = v
+					case map[string]interface{}:
+						itemID = v["id"]
+					default:
 						// Try to use the item directly as ID
 						itemID = item
 					}

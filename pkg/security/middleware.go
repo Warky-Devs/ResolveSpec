@@ -5,11 +5,14 @@ import (
 	"net/http"
 )
 
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
 const (
 	// Context keys for user information
-	UserIDKey    = "user_id"
-	UserRolesKey = "user_roles"
-	UserTokenKey = "user_token"
+	UserIDKey    contextKey = "user_id"
+	UserRolesKey contextKey = "user_roles"
+	UserTokenKey contextKey = "user_token"
 )
 
 // AuthMiddleware extracts user authentication from request and adds to context

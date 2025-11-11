@@ -100,6 +100,10 @@ func (b *BunSelectQuery) Model(model interface{}) common.SelectQuery {
 		b.schema, b.tableName = parseTableName(fullTableName)
 	}
 
+	if provider, ok := model.(common.TableAliasProvider); ok {
+		b.tableAlias = provider.TableAlias()
+	}
+
 	return b
 }
 

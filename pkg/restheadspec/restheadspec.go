@@ -62,6 +62,7 @@ import (
 
 	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/database"
 	"github.com/bitechdev/ResolveSpec/pkg/common/adapters/router"
+	"github.com/bitechdev/ResolveSpec/pkg/logger"
 	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
 )
 
@@ -252,5 +253,7 @@ func ExampleBunRouterWithBunDB(bunDB *bun.DB) {
 	r := routerAdapter.GetBunRouter()
 
 	// Start server
-	http.ListenAndServe(":8080", r)
+	if err := http.ListenAndServe(":8080", r); err != nil {
+		logger.Error("Server failed to start: %v", err)
+	}
 }

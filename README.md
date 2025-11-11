@@ -1,5 +1,7 @@
 # 📜 ResolveSpec 📜
 
+![Tests](https://github.com/bitechdev/ResolveSpec/workflows/Tests/badge.svg)
+
 ResolveSpec is a flexible and powerful REST API specification and implementation that provides GraphQL-like capabilities while maintaining REST simplicity. It offers **two complementary approaches**:
 
 1. **ResolveSpec** - Body-based API with JSON request options

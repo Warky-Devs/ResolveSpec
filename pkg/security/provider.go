@@ -73,8 +73,9 @@ type SecurityList struct {
 	LoadColumnSecurityCallback LoadColumnSecurityFunc
 	LoadRowSecurityCallback    LoadRowSecurityFunc
 }
+type CONTEXT_KEY string
 
-const SECURITY_CONTEXT_KEY = "SecurityList"
+const SECURITY_CONTEXT_KEY CONTEXT_KEY = "SecurityList"
 
 var GlobalSecurity SecurityList
 
@@ -105,22 +106,22 @@ func maskString(pString string, maskStart, maskEnd int, maskChar string, invert 
 	}
 	for index, char := range pString {
 		if invert && index >= middleIndex-maskStart && index <= middleIndex {
-			newStr = newStr + maskChar
+			newStr += maskChar
 			continue
 		}
 		if invert && index <= middleIndex+maskEnd && index >= middleIndex {
-			newStr = newStr + maskChar
+			newStr += maskChar
 			continue
 		}
 		if !invert && index <= maskStart {
-			newStr = newStr + maskChar
+			newStr += maskChar
 			continue
 		}
 		if !invert && index >= strLen-1-maskEnd {
-			newStr = newStr + maskChar
+			newStr += maskChar
 			continue
 		}
-		newStr = newStr + string(char)
+		newStr += string(char)
 	}
 
 	return newStr
@@ -145,7 +146,8 @@ func (m *SecurityList) ColumSecurityApplyOnRecord(prevRecord reflect.Value, newR
 		return cols, fmt.Errorf("no security data")
 	}
 
-	for _, colsec := range colsecList {
+	for i := range colsecList {
+		colsec := &colsecList[i]
 		if !strings.EqualFold(colsec.Accesstype, "mask") && !strings.EqualFold(colsec.Accesstype, "hide") {
 			continue
 		}
@@ -262,24 +264,25 @@ func setColSecValue(fieldsrc reflect.Value, colsec ColumnSecurity, fieldTypeName
 		fieldval = fieldval.Elem()
 	}
 
-	if strings.Contains(strings.ToLower(fieldval.Kind().String()), "int") &&
-		(strings.EqualFold(colsec.Accesstype, "mask") || strings.EqualFold(colsec.Accesstype, "hide")) {
+	fieldKindLower := strings.ToLower(fieldval.Kind().String())
+	switch {
+	case strings.Contains(fieldKindLower, "int") &&
+		(strings.EqualFold(colsec.Accesstype, "mask") || strings.EqualFold(colsec.Accesstype, "hide")):
 		if fieldval.CanInt() && fieldval.CanSet() {
 			fieldval.SetInt(0)
 		}
-	} else if (strings.Contains(strings.ToLower(fieldval.Kind().String()), "time") ||
-		strings.Contains(strings.ToLower(fieldval.Kind().String()), "date")) &&
-		(strings.EqualFold(colsec.Accesstype, "mask") || strings.EqualFold(colsec.Accesstype, "hide")) {
+	case (strings.Contains(fieldKindLower, "time") || strings.Contains(fieldKindLower, "date")) &&
+		(strings.EqualFold(colsec.Accesstype, "mask") || strings.EqualFold(colsec.Accesstype, "hide")):
 		fieldval.SetZero()
-	} else if strings.Contains(strings.ToLower(fieldval.Kind().String()), "string") {
+	case strings.Contains(fieldKindLower, "string"):
 		strVal := fieldval.String()
 		if strings.EqualFold(colsec.Accesstype, "mask") {
 			fieldval.SetString(maskString(strVal, colsec.MaskStart, colsec.MaskEnd, colsec.MaskChar, colsec.MaskInvert))
 		} else if strings.EqualFold(colsec.Accesstype, "hide") {
 			fieldval.SetString("")
 		}
-	} else if strings.Contains(fieldTypeName, "json") &&
-		(strings.EqualFold(colsec.Accesstype, "mask") || strings.EqualFold(colsec.Accesstype, "hide")) {
+	case strings.Contains(fieldTypeName, "json") &&
+		(strings.EqualFold(colsec.Accesstype, "mask") || strings.EqualFold(colsec.Accesstype, "hide")):
 		if len(colsec.Path) < 2 {
 			return 1, fieldval
 		}
@@ -300,11 +303,11 @@ func setColSecValue(fieldsrc reflect.Value, colsec ColumnSecurity, fieldTypeName
 	return 0, fieldsrc
 }
 
-func (m *SecurityList) ApplyColumnSecurity(records reflect.Value, modelType reflect.Type, pUserID int, pSchema, pTablename string) (error, reflect.Value) {
+func (m *SecurityList) ApplyColumnSecurity(records reflect.Value, modelType reflect.Type, pUserID int, pSchema, pTablename string) (reflect.Value, error) {
 	defer logger.CatchPanic("ApplyColumnSecurity")
 
 	if m.ColumnSecurity == nil {
-		return fmt.Errorf("security not initialized"), records
+		return records, fmt.Errorf("security not initialized")
 	}
 
 	m.ColumnSecurityMutex.RLock()
@@ -312,10 +315,11 @@ func (m *SecurityList) ApplyColumnSecurity(records reflect.Value, modelType refl
 
 	colsecList, ok := m.ColumnSecurity[fmt.Sprintf("%s.%s@%d", pSchema, pTablename, pUserID)]
 	if !ok || colsecList == nil {
-		return fmt.Errorf("no security data"), records
+		return records, fmt.Errorf("no security data")
 	}
 
-	for _, colsec := range colsecList {
+	for i := range colsecList {
+		colsec := &colsecList[i]
 		if !strings.EqualFold(colsec.Accesstype, "mask") && !strings.EqualFold(colsec.Accesstype, "hide") {
 			continue
 		}
@@ -353,7 +357,7 @@ func (m *SecurityList) ApplyColumnSecurity(records reflect.Value, modelType refl
 
 					if i == pathLen-1 {
 						if nameType == "sql" || nameType == "struct" {
-							setColSecValue(field, colsec, fieldName)
+							setColSecValue(field, *colsec, fieldName)
 						}
 						break
 					}
@@ -365,7 +369,7 @@ func (m *SecurityList) ApplyColumnSecurity(records reflect.Value, modelType refl
 		}
 	}
 
-	return nil, records
+	return records, nil
 }
 
 func (m *SecurityList) LoadColumnSecurity(pUserID int, pSchema, pTablename string, pOverwrite bool) error {
@@ -407,9 +411,10 @@ func (m *SecurityList) ClearSecurity(pUserID int, pSchema, pTablename string) er
 		return nil
 	}
 
-	for _, cs := range list {
+	for i := range list {
+		cs := &list[i]
 		if cs.Schema != pSchema && cs.Tablename != pTablename && cs.UserID != pUserID {
-			filtered = append(filtered, cs)
+			filtered = append(filtered, *cs)
 		}
 	}
 

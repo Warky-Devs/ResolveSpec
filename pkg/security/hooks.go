@@ -27,9 +27,7 @@ func RegisterSecurityHooks(handler *restheadspec.Handler, securityList *Security
 	})
 
 	// Hook 4 (Optional): Audit logging
-	handler.Hooks().Register(restheadspec.AfterRead, func(hookCtx *restheadspec.HookContext) error {
-		return logDataAccess(hookCtx)
-	})
+	handler.Hooks().Register(restheadspec.AfterRead, logDataAccess)
 }
 
 // loadSecurityRules loads security configuration for the user and entity
@@ -162,7 +160,7 @@ func applyColumnSecurity(hookCtx *restheadspec.HookContext, securityList *Securi
 		resultValue = resultValue.Elem()
 	}
 
-	err, maskedResult := securityList.ApplyColumnSecurity(resultValue, modelType, userID, schema, tablename)
+	maskedResult, err := securityList.ApplyColumnSecurity(resultValue, modelType, userID, schema, tablename)
 	if err != nil {
 		logger.Warn("Column security error: %v", err)
 		// Don't fail the request, just log the issue

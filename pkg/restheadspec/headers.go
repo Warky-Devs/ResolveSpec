@@ -416,16 +416,17 @@ func (h *Handler) parseSorting(options *ExtendedRequestOptions, value string) {
 		direction := "ASC"
 		colName := field
 
-		if strings.HasPrefix(field, "-") {
+		switch {
+		case strings.HasPrefix(field, "-"):
 			direction = "DESC"
 			colName = strings.TrimPrefix(field, "-")
-		} else if strings.HasPrefix(field, "+") {
+		case strings.HasPrefix(field, "+"):
 			direction = "ASC"
 			colName = strings.TrimPrefix(field, "+")
-		} else if strings.HasSuffix(field, " desc") {
+		case strings.HasSuffix(field, " desc"):
 			direction = "DESC"
 			colName = strings.TrimSuffix(field, "desc")
-		} else if strings.HasSuffix(field, " asc") {
+		case strings.HasSuffix(field, " asc"):
 			direction = "ASC"
 			colName = strings.TrimSuffix(field, "asc")
 		}

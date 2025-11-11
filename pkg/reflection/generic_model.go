@@ -49,12 +49,13 @@ func GetModelColumnDetail(record reflect.Value) []ModelFieldDetail {
 		fielddetail.DataType = fieldtype.Type.Name()
 		fielddetail.SQLName = fnFindKeyVal(gormdetail, "column:")
 		fielddetail.SQLDataType = fnFindKeyVal(gormdetail, "type:")
-		if strings.Index(strings.ToLower(gormdetail), "identity") > 0 ||
-			strings.Index(strings.ToLower(gormdetail), "primary_key") > 0 {
+		gormdetailLower := strings.ToLower(gormdetail)
+		switch {
+		case strings.Index(gormdetailLower, "identity") > 0 || strings.Index(gormdetailLower, "primary_key") > 0:
 			fielddetail.SQLKey = "primary_key"
-		} else if strings.Contains(strings.ToLower(gormdetail), "unique") {
+		case strings.Contains(gormdetailLower, "unique"):
 			fielddetail.SQLKey = "unique"
-		} else if strings.Contains(strings.ToLower(gormdetail), "uniqueindex") {
+		case strings.Contains(gormdetailLower, "uniqueindex"):
 			fielddetail.SQLKey = "uniqueindex"
 		}
 

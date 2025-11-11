@@ -86,6 +86,10 @@ func (g *GormSelectQuery) Model(model interface{}) common.SelectQuery {
 		g.schema, g.tableName = parseTableName(fullTableName)
 	}
 
+	if provider, ok := model.(common.TableAliasProvider); ok {
+		g.tableAlias = provider.TableAlias()
+	}
+
 	return g
 }
 
@@ -267,11 +271,12 @@ func (g *GormInsertQuery) Returning(columns ...string) common.InsertQuery {
 
 func (g *GormInsertQuery) Exec(ctx context.Context) (common.Result, error) {
 	var result *gorm.DB
-	if g.model != nil {
+	switch {
+	case g.model != nil:
 		result = g.db.WithContext(ctx).Create(g.model)
-	} else if g.values != nil {
+	case g.values != nil:
 		result = g.db.WithContext(ctx).Create(g.values)
-	} else {
+	default:
 		result = g.db.WithContext(ctx).Create(map[string]interface{}{})
 	}
 	return &GormResult{result: result}, result.Error

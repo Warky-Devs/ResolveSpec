@@ -130,7 +130,7 @@ func (h *HTTPRequest) AllHeaders() map[string]string {
 // HTTPResponseWriter adapts our ResponseWriter interface to standard http.ResponseWriter
 type HTTPResponseWriter struct {
 	resp   http.ResponseWriter
-	w      common.ResponseWriter
+	w      common.ResponseWriter //nolint:unused
 	status int
 }
 

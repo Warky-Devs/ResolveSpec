@@ -781,11 +781,12 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 	query := h.db.NewUpdate().Table(tableName).SetMap(dataMap)
 
 	// Apply ID filter
-	if id != "" {
+	switch {
+	case id != "":
 		query = query.Where("id = ?", id)
-	} else if idPtr != nil {
+	case idPtr != nil:
 		query = query.Where("id = ?", *idPtr)
-	} else {
+	default:
 		h.sendError(w, http.StatusBadRequest, "missing_id", "ID is required for update", nil)
 		return
 	}
@@ -902,11 +903,12 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 					var itemID interface{}
 
 					// Check if item is a string ID or object with id field
-					if idStr, ok := item.(string); ok {
-						itemID = idStr
-					} else if itemMap, ok := item.(map[string]interface{}); ok {
-						itemID = itemMap["id"]
-					} else {
+					switch v := item.(type) {
+					case string:
+						itemID = v
+					case map[string]interface{}:
+						itemID = v["id"]
+					default:
 						itemID = item
 					}
 
@@ -1330,7 +1332,9 @@ func (h *Handler) sendResponse(w common.ResponseWriter, data interface{}, metada
 		Metadata: metadata,
 	}
 	w.WriteHeader(http.StatusOK)
-	w.WriteJSON(response)
+	if err := w.WriteJSON(response); err != nil {
+		logger.Error("Failed to write JSON response: %v", err)
+	}
 }
 
 // sendFormattedResponse sends response with formatting options
@@ -1350,7 +1354,9 @@ func (h *Handler) sendFormattedResponse(w common.ResponseWriter, data interface{
 	case "simple":
 		// Simple format: just return the data array
 		w.WriteHeader(http.StatusOK)
-		w.WriteJSON(data)
+		if err := w.WriteJSON(data); err != nil {
+			logger.Error("Failed to write JSON response: %v", err)
+		}
 	case "syncfusion":
 		// Syncfusion format: { result: data, count: total }
 		response := map[string]interface{}{
@@ -1360,7 +1366,9 @@ func (h *Handler) sendFormattedResponse(w common.ResponseWriter, data interface{
 			response["count"] = metadata.Total
 		}
 		w.WriteHeader(http.StatusOK)
-		w.WriteJSON(response)
+		if err := w.WriteJSON(response); err != nil {
+			logger.Error("Failed to write JSON response: %v", err)
+		}
 	default:
 		// Default/detail format: standard response with metadata
 		response := common.Response{
@@ -1369,7 +1377,9 @@ func (h *Handler) sendFormattedResponse(w common.ResponseWriter, data interface{
 			Metadata: metadata,
 		}
 		w.WriteHeader(http.StatusOK)
-		w.WriteJSON(response)
+		if err := w.WriteJSON(response); err != nil {
+			logger.Error("Failed to write JSON response: %v", err)
+		}
 	}
 }
 
@@ -1397,7 +1407,9 @@ func (h *Handler) sendError(w common.ResponseWriter, statusCode int, code, messa
 		},
 	}
 	w.WriteHeader(statusCode)
-	w.WriteJSON(response)
+	if err := w.WriteJSON(response); err != nil {
+		logger.Error("Failed to write JSON error response: %v", err)
+	}
 }
 
 // FetchRowNumber calculates the row number of a specific record based on sorting and filtering
