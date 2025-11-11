@@ -196,6 +196,13 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		query = query.Column(options.Columns...)
 	}
 
+	if len(options.ComputedColumns) > 0 {
+		for _, cu := range options.ComputedColumns {
+			logger.Debug("Applying computed column: %s", cu.Name)
+			query = query.ColumnExpr("(?) AS "+cu.Name, cu.Expression)
+		}
+	}
+
 	// Apply preloading
 	if len(options.Preload) > 0 {
 		query = h.applyPreloads(model, query, options.Preload)

@@ -105,6 +105,11 @@ func (g *GormSelectQuery) Column(columns ...string) common.SelectQuery {
 	return g
 }
 
+func (g *GormSelectQuery) ColumnExpr(query string, args ...interface{}) common.SelectQuery {
+	g.db = g.db.Select(query, args...)
+	return g
+}
+
 func (g *GormSelectQuery) Where(query string, args ...interface{}) common.SelectQuery {
 	g.db = g.db.Where(query, args...)
 	return g

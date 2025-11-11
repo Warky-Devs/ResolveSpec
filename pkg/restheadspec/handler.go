@@ -253,6 +253,21 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		query = query.Table(tableName)
 	}
 
+	// Apply ComputedQL fields if any
+	if len(options.ComputedQL) > 0 {
+		for colName, colExpr := range options.ComputedQL {
+			logger.Debug("Applying computed column: %s", colName)
+			query = query.ColumnExpr("(?) AS "+colName, colExpr)
+		}
+	}
+
+	if len(options.ComputedColumns) > 0 {
+		for _, cu := range options.ComputedColumns {
+			logger.Debug("Applying computed column: %s", cu.Name)
+			query = query.ColumnExpr("(?) AS "+cu.Name, cu.Expression)
+		}
+	}
+
 	// Apply column selection
 	if len(options.Columns) > 0 {
 		logger.Debug("Selecting columns: %v", options.Columns)

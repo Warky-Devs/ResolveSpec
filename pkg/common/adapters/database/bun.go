@@ -119,6 +119,12 @@ func (b *BunSelectQuery) Column(columns ...string) common.SelectQuery {
 	return b
 }
 
+func (b *BunSelectQuery) ColumnExpr(query string, args ...interface{}) common.SelectQuery {
+	b.query = b.query.ColumnExpr(query, args)
+
+	return b
+}
+
 func (b *BunSelectQuery) Where(query string, args ...interface{}) common.SelectQuery {
 	b.query = b.query.Where(query, args...)
 	return b

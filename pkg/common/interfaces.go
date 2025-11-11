@@ -26,6 +26,7 @@ type SelectQuery interface {
 	Model(model interface{}) SelectQuery
 	Table(table string) SelectQuery
 	Column(columns ...string) SelectQuery
+	ColumnExpr(query string, args ...interface{}) SelectQuery
 	Where(query string, args ...interface{}) SelectQuery
 	WhereOr(query string, args ...interface{}) SelectQuery
 	Join(query string, args ...interface{}) SelectQuery
