@@ -32,8 +32,9 @@ Both share the same core architecture and provide dynamic data querying, relatio
   - [Lifecycle Hooks](#lifecycle-hooks)
   - [Cursor Pagination](#cursor-pagination)
 - [Example Usage](#example-usage)
+  - [Recursive CRUD Operations](#recursive-crud-operations-)
 - [Testing](#testing)
-- [What's New in v2.0](#whats-new-in-v20)
+- [What's New](#whats-new)
 
 ## Features
 
@@ -45,6 +46,7 @@ Both share the same core architecture and provide dynamic data querying, relatio
 - **Pagination**: Built-in limit/offset and cursor-based pagination
 - **Computed Columns**: Define virtual columns for complex calculations
 - **Custom Operators**: Add custom SQL conditions when needed
+- **🆕 Recursive CRUD Handler**: Automatically handle nested object graphs with foreign key resolution and per-record operation control via `_request` field
 
 ### Architecture (v2.0+)
 - **🆕 Database Agnostic**: Works with GORM, Bun, or any database layer through adapters
@@ -341,6 +343,92 @@ POST /core/users
   }
 }
 ```
+
+### Recursive CRUD Operations (🆕)
+
+ResolveSpec now supports automatic handling of nested object graphs with intelligent foreign key resolution. This allows you to create, update, or delete entire object hierarchies in a single request.
+
+#### Creating Nested Objects
+
+```json
+POST /core/users
+{
+  "operation": "create",
+  "data": {
+    "name": "John Doe",
+    "email": "john@example.com",
+    "posts": [
+      {
+        "title": "My First Post",
+        "content": "Hello World",
+        "tags": [
+          {"name": "tech"},
+          {"name": "programming"}
+        ]
+      },
+      {
+        "title": "Second Post",
+        "content": "More content"
+      }
+    ],
+    "profile": {
+      "bio": "Software Developer",
+      "website": "https://example.com"
+    }
+  }
+}
+```
+
+#### Per-Record Operation Control with `_request`
+
+Control individual operations for each nested record using the special `_request` field:
+
+```json
+POST /core/users/123
+{
+  "operation": "update",
+  "data": {
+    "name": "John Updated",
+    "posts": [
+      {
+        "_request": "insert",
+        "title": "New Post",
+        "content": "Fresh content"
+      },
+      {
+        "_request": "update",
+        "id": 456,
+        "title": "Updated Post Title"
+      },
+      {
+        "_request": "delete",
+        "id": 789
+      }
+    ]
+  }
+}
+```
+
+**Supported `_request` values**:
+- `insert` - Create a new related record
+- `update` - Update an existing related record
+- `delete` - Delete a related record
+- `upsert` - Create if doesn't exist, update if exists
+
+#### How It Works
+
+1. **Automatic Foreign Key Resolution**: Parent IDs are automatically propagated to child records
+2. **Recursive Processing**: Handles nested relationships at any depth
+3. **Transaction Safety**: All operations execute within database transactions
+4. **Relationship Detection**: Automatically detects belongsTo, hasMany, hasOne, and many2many relationships
+5. **Flexible Operations**: Mix create, update, and delete operations in a single request
+
+#### Benefits
+
+- Reduce API round trips for complex object graphs
+- Maintain referential integrity automatically
+- Simplify client-side code
+- Atomic operations with automatic rollback on errors
 
 ## Installation
 
@@ -811,6 +899,25 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### v2.1 (Latest)
 
+**Recursive CRUD Handler (🆕 Nov 11, 2025)**:
+- **Nested Object Graphs**: Automatically handle complex object hierarchies with parent-child relationships
+- **Foreign Key Resolution**: Automatic propagation of parent IDs to child records
+- **Per-Record Operations**: Control create/update/delete operations per record via `_request` field
+- **Transaction Safety**: All nested operations execute atomically within database transactions
+- **Relationship Detection**: Automatic detection of belongsTo, hasMany, hasOne, and many2many relationships
+- **Deep Nesting Support**: Handle relationships at any depth level
+- **Mixed Operations**: Combine insert, update, and delete operations in a single request
+
+**Primary Key Improvements (Nov 11, 2025)**:
+- **GetPrimaryKeyName**: Enhanced primary key detection for better preload and ID field handling
+- **Better GORM/Bun Support**: Improved compatibility with both ORMs for primary key operations
+- **Computed Column Support**: Fixed computed columns functionality across handlers
+
+**Database Adapter Enhancements (Nov 11, 2025)**:
+- **Bun ORM Relations**: Using Scan model method for better has-many and many-to-many relationship handling
+- **Model Method Support**: Enhanced query building with proper model registration
+- **Improved Type Safety**: Better handling of relationship queries with type-aware scanning
+
 **RestHeadSpec - Header-Based REST API**:
 - **Header-Based Querying**: All query options via HTTP headers instead of request body
 - **Lifecycle Hooks**: Before/after hooks for create, read, update, delete operations
@@ -826,6 +933,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Improved reflection safety
 - Fixed COUNT query issues with table aliasing
 - Better pointer handling throughout the codebase
+- **Comprehensive Test Coverage**: Added standalone CRUD tests for both ResolveSpec and RestHeadSpec
 
 ### v2.0
 
