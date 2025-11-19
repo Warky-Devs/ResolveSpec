@@ -45,6 +45,62 @@ func GetPrimaryKeyName(model any) string {
 	return ""
 }
 
+// GetPrimaryKeyValue extracts the primary key value from a model instance
+// Returns the value of the primary key field
+func GetPrimaryKeyValue(model any) interface{} {
+	if model == nil || reflect.TypeOf(model) == nil {
+		return nil
+	}
+
+	val := reflect.ValueOf(model)
+	if val.Kind() == reflect.Pointer {
+		val = val.Elem()
+	}
+
+	if val.Kind() != reflect.Struct {
+		return nil
+	}
+
+	typ := val.Type()
+
+	// Try Bun tag first
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		bunTag := field.Tag.Get("bun")
+		if strings.Contains(bunTag, "pk") {
+			fieldValue := val.Field(i)
+			if fieldValue.CanInterface() {
+				return fieldValue.Interface()
+			}
+		}
+	}
+
+	// Fall back to GORM tag
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		gormTag := field.Tag.Get("gorm")
+		if strings.Contains(gormTag, "primaryKey") {
+			fieldValue := val.Field(i)
+			if fieldValue.CanInterface() {
+				return fieldValue.Interface()
+			}
+		}
+	}
+
+	// Last resort: look for field named "ID" or "Id"
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if strings.ToLower(field.Name) == "id" {
+			fieldValue := val.Field(i)
+			if fieldValue.CanInterface() {
+				return fieldValue.Interface()
+			}
+		}
+	}
+
+	return nil
+}
+
 // GetModelColumns extracts all column names from a model using reflection
 // It checks bun tags first, then gorm tags, then json tags, and finally falls back to lowercase field names
 func GetModelColumns(model any) []string {
