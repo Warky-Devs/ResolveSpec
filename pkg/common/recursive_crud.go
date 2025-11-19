@@ -406,10 +406,20 @@ func ShouldUseNestedProcessor(data map[string]interface{}, model interface{}, re
 		relInfo := relationshipHelper.GetRelationshipInfo(modelType, key)
 		if relInfo != nil {
 			// Check if the value is actually nested data (object or array)
-			switch value.(type) {
-			case map[string]interface{}, []interface{}, []map[string]interface{}:
-				logger.Debug("Found nested relation field: %s", key)
-				return true
+			switch v := value.(type) {
+			case map[string]interface{}:
+				//logger.Debug("Found nested relation field: %s", key)
+				return ShouldUseNestedProcessor(v, relInfo.RelatedModel, relationshipHelper)
+			case []interface{}, []map[string]interface{}:
+				//logger.Debug("Found nested relation field: %s", key)
+				for _, item := range v.([]interface{}) {
+					if itemMap, ok := item.(map[string]interface{}); ok {
+						if ShouldUseNestedProcessor(itemMap, relInfo.RelatedModel, relationshipHelper) {
+							return true
+						}
+					}
+				}
+				return false
 			}
 		}
 	}
