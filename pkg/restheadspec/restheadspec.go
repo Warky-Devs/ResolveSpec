@@ -106,7 +106,7 @@ func SetupMuxRoutes(muxRouter *mux.Router, handler *Handler) {
 		reqAdapter := router.NewHTTPRequest(r)
 		respAdapter := router.NewHTTPResponseWriter(w)
 		handler.Handle(respAdapter, reqAdapter, vars)
-	}).Methods("GET", "PUT", "PATCH", "DELETE")
+	}).Methods("GET", "PUT", "PATCH", "DELETE", "POST")
 
 	// GET for metadata (using HandleGet)
 	muxRouter.HandleFunc("/{schema}/{entity}/metadata", func(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +178,18 @@ func SetupBunRouterRoutes(bunRouter *router.StandardBunRouterAdapter, handler *H
 
 	// GET, PUT, PATCH, DELETE for /:schema/:entity/:id
 	r.Handle("GET", "/:schema/:entity/:id", func(w http.ResponseWriter, req bunrouter.Request) error {
+		params := map[string]string{
+			"schema": req.Param("schema"),
+			"entity": req.Param("entity"),
+			"id":     req.Param("id"),
+		}
+		reqAdapter := router.NewBunRouterRequest(req)
+		respAdapter := router.NewHTTPResponseWriter(w)
+		handler.Handle(respAdapter, reqAdapter, params)
+		return nil
+	})
+
+	r.Handle("POST", "/:schema/:entity/:id", func(w http.ResponseWriter, req bunrouter.Request) error {
 		params := map[string]string{
 			"schema": req.Param("schema"),
 			"entity": req.Param("entity"),
