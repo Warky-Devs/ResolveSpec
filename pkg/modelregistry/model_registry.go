@@ -29,7 +29,23 @@ func NewModelRegistry() *DefaultModelRegistry {
 }
 
 func SetDefaultRegistry(registry *DefaultModelRegistry) {
+	registriesMutex.Lock()
+	foundAt := -1
+	for idx, r := range registries {
+		if r == defaultRegistry {
+			foundAt = idx
+			break
+		}
+	}
 	defaultRegistry = registry
+	if foundAt >= 0 {
+		registries[foundAt] = registry
+	} else {
+		registries = append([]*DefaultModelRegistry{registry}, registries...)
+	}
+
+	defer registriesMutex.Unlock()
+
 }
 
 // AddRegistry adds a registry to the global list of registries
