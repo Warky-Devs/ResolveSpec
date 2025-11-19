@@ -236,3 +236,90 @@ func ExtractColumnFromBunTag(tag string) string {
 	}
 	return ""
 }
+
+// IsColumnWritable checks if a column can be written to in the database
+// For bun: returns false if the field has "scanonly" tag
+// For gorm: returns false if the field has "<-:false" or "->" (read-only) tag
+func IsColumnWritable(model any, columnName string) bool {
+	modelType := reflect.TypeOf(model)
+
+	// Unwrap pointers to get to the base struct type
+	for modelType != nil && modelType.Kind() == reflect.Pointer {
+		modelType = modelType.Elem()
+	}
+
+	// Validate that we have a struct type
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		return false
+	}
+
+	for i := 0; i < modelType.NumField(); i++ {
+		field := modelType.Field(i)
+
+		// Check if this field matches the column name
+		fieldColumnName := getColumnNameFromField(field)
+		if fieldColumnName != columnName {
+			continue
+		}
+
+		// Check bun tag for scanonly
+		bunTag := field.Tag.Get("bun")
+		if bunTag != "" {
+			if isBunFieldScanOnly(bunTag) {
+				return false
+			}
+		}
+
+		// Check gorm tag for write restrictions
+		gormTag := field.Tag.Get("gorm")
+		if gormTag != "" {
+			if isGormFieldReadOnly(gormTag) {
+				return false
+			}
+		}
+
+		// Column is writable
+		return true
+	}
+
+	// Column not found in model, allow it (might be a dynamic column)
+	return true
+}
+
+// isBunFieldScanOnly checks if a bun tag indicates the field is scan-only
+// Example: "column_name,scanonly" -> true
+func isBunFieldScanOnly(tag string) bool {
+	parts := strings.Split(tag, ",")
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "scanonly" {
+			return true
+		}
+	}
+	return false
+}
+
+// isGormFieldReadOnly checks if a gorm tag indicates the field is read-only
+// Examples:
+//   - "<-:false" -> true (no writes allowed)
+//   - "->" -> true (read-only, common pattern)
+//   - "column:name;->" -> true
+//   - "<-:create" -> false (writes allowed on create)
+func isGormFieldReadOnly(tag string) bool {
+	parts := strings.Split(tag, ";")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+
+		// Check for read-only marker
+		if part == "->" {
+			return true
+		}
+
+		// Check for write restrictions
+		if value, found := strings.CutPrefix(part, "<-:"); found {
+			if value == "false" {
+				return true
+			}
+		}
+	}
+	return false
+}

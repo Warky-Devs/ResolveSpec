@@ -9,6 +9,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/bitechdev/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/reflection"
 )
 
 // BunAdapter adapts Bun to work with our Database interface
@@ -353,10 +354,12 @@ func (b *BunInsertQuery) Exec(ctx context.Context) (common.Result, error) {
 // BunUpdateQuery implements UpdateQuery for Bun
 type BunUpdateQuery struct {
 	query *bun.UpdateQuery
+	model interface{}
 }
 
 func (b *BunUpdateQuery) Model(model interface{}) common.UpdateQuery {
 	b.query = b.query.Model(model)
+	b.model = model
 	return b
 }
 
@@ -366,12 +369,22 @@ func (b *BunUpdateQuery) Table(table string) common.UpdateQuery {
 }
 
 func (b *BunUpdateQuery) Set(column string, value interface{}) common.UpdateQuery {
+	// Validate column is writable if model is set
+	if b.model != nil && !reflection.IsColumnWritable(b.model, column) {
+		// Skip scan-only columns
+		return b
+	}
 	b.query = b.query.Set(column+" = ?", value)
 	return b
 }
 
 func (b *BunUpdateQuery) SetMap(values map[string]interface{}) common.UpdateQuery {
 	for column, value := range values {
+		// Validate column is writable if model is set
+		if b.model != nil && !reflection.IsColumnWritable(b.model, column) {
+			// Skip scan-only columns
+			continue
+		}
 		b.query = b.query.Set(column+" = ?", value)
 	}
 	return b

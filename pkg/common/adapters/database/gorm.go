@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/bitechdev/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/reflection"
 )
 
 // GormAdapter adapts GORM to work with our Database interface
@@ -343,6 +344,12 @@ func (g *GormUpdateQuery) Table(table string) common.UpdateQuery {
 }
 
 func (g *GormUpdateQuery) Set(column string, value interface{}) common.UpdateQuery {
+	// Validate column is writable if model is set
+	if g.model != nil && !reflection.IsColumnWritable(g.model, column) {
+		// Skip read-only columns
+		return g
+	}
+
 	if g.updates == nil {
 		g.updates = make(map[string]interface{})
 	}
@@ -353,7 +360,18 @@ func (g *GormUpdateQuery) Set(column string, value interface{}) common.UpdateQue
 }
 
 func (g *GormUpdateQuery) SetMap(values map[string]interface{}) common.UpdateQuery {
-	g.updates = values
+	// Filter out read-only columns if model is set
+	if g.model != nil {
+		filteredValues := make(map[string]interface{})
+		for column, value := range values {
+			if reflection.IsColumnWritable(g.model, column) {
+				filteredValues[column] = value
+			}
+		}
+		g.updates = filteredValues
+	} else {
+		g.updates = values
+	}
 	return g
 }
 
