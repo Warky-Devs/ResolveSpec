@@ -28,6 +28,10 @@ func NewModelRegistry() *DefaultModelRegistry {
 	}
 }
 
+func SetDefaultRegistry(registry *DefaultModelRegistry) {
+	defaultRegistry = registry
+}
+
 // AddRegistry adds a registry to the global list of registries
 // Registries are searched in the order they were added
 func AddRegistry(registry *DefaultModelRegistry) {

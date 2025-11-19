@@ -811,7 +811,7 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 		dataMap["id"] = targetID
 
 		// Create update query
-		query := tx.NewUpdate().Model(model).Table(tableName).SetMap(dataMap)
+		query := tx.NewUpdate().Table(tableName).SetMap(dataMap)
 		pkName := reflection.GetPrimaryKeyName(model)
 		query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(pkName)), targetID)
 
