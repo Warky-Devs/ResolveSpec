@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"github.com/bitechdev/ResolveSpec/pkg/common"
@@ -133,9 +134,15 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 			h.sendError(w, http.StatusBadRequest, "invalid_request", "Invalid request body", err)
 			return
 		}
-		h.handleCreate(ctx, w, data, options)
+		validId, _ := strconv.ParseInt(id, 10, 64)
+		if validId > 0 {
+			h.handleUpdate(ctx, w, id, nil, data, options)
+		} else {
+			h.handleCreate(ctx, w, data, options)
+		}
 	case "PUT", "PATCH":
 		// Update operation
+
 		body, err := r.Body()
 		if err != nil {
 			logger.Error("Failed to read request body: %v", err)
