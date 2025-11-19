@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/bitechdev/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
 	"github.com/bitechdev/ResolveSpec/pkg/reflection"
 )
 
@@ -98,6 +99,7 @@ func (g *GormSelectQuery) Table(table string) common.SelectQuery {
 	g.db = g.db.Table(table)
 	// Check if the table name contains schema (e.g., "schema.table")
 	g.schema, g.tableName = parseTableName(table)
+
 	return g
 }
 
@@ -340,6 +342,13 @@ func (g *GormUpdateQuery) Model(model interface{}) common.UpdateQuery {
 
 func (g *GormUpdateQuery) Table(table string) common.UpdateQuery {
 	g.db = g.db.Table(table)
+	if g.model == nil {
+		// Try to get table name from table string if model is not set
+		model, err := modelregistry.GetModelByName(table)
+		if err == nil {
+			g.model = model
+		}
+	}
 	return g
 }
 

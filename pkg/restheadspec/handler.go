@@ -811,7 +811,7 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 		dataMap["id"] = targetID
 
 		// Create update query
-		query := tx.NewUpdate().Table(tableName).SetMap(dataMap)
+		query := tx.NewUpdate().Model(model).Table(tableName).SetMap(dataMap)
 		pkName := reflection.GetPrimaryKeyName(model)
 		query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(pkName)), targetID)
 
@@ -1904,7 +1904,8 @@ func filterExtendedOptions(validator *common.ColumnValidator, options ExtendedRe
 }
 
 // shouldUseNestedProcessor determines if we should use nested CUD processing
-// It checks if the data contains nested relations or a _request field
+// It recursively checks if the data contains deeply nested relations or _request fields
+// Simple one-level relations without further nesting don't require the nested processor
 func (h *Handler) shouldUseNestedProcessor(data map[string]interface{}, model interface{}) bool {
 	return common.ShouldUseNestedProcessor(data, model, h)
 }
@@ -1966,12 +1967,40 @@ func (h *Handler) getRelationshipInfo(modelType reflect.Type, relationName strin
 				// Determine if it's belongsTo or hasMany/hasOne
 				if field.Type.Kind() == reflect.Slice {
 					info.relationType = "hasMany"
+					// Get the element type for slice
+					elemType := field.Type.Elem()
+					if elemType.Kind() == reflect.Ptr {
+						elemType = elemType.Elem()
+					}
+					if elemType.Kind() == reflect.Struct {
+						info.relatedModel = reflect.New(elemType).Elem().Interface()
+					}
 				} else if field.Type.Kind() == reflect.Ptr || field.Type.Kind() == reflect.Struct {
 					info.relationType = "belongsTo"
+					elemType := field.Type
+					if elemType.Kind() == reflect.Ptr {
+						elemType = elemType.Elem()
+					}
+					if elemType.Kind() == reflect.Struct {
+						info.relatedModel = reflect.New(elemType).Elem().Interface()
+					}
 				}
 			} else if strings.Contains(gormTag, "many2many") {
 				info.relationType = "many2many"
 				info.joinTable = h.extractTagValue(gormTag, "many2many")
+				// Get the element type for many2many (always slice)
+				if field.Type.Kind() == reflect.Slice {
+					elemType := field.Type.Elem()
+					if elemType.Kind() == reflect.Ptr {
+						elemType = elemType.Elem()
+					}
+					if elemType.Kind() == reflect.Struct {
+						info.relatedModel = reflect.New(elemType).Elem().Interface()
+					}
+				}
+			} else {
+				// Field has no GORM relationship tags, so it's not a relation
+				return nil
 			}
 
 			return info

@@ -9,6 +9,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/bitechdev/ResolveSpec/pkg/common"
+	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
 	"github.com/bitechdev/ResolveSpec/pkg/reflection"
 )
 
@@ -365,6 +366,14 @@ func (b *BunUpdateQuery) Model(model interface{}) common.UpdateQuery {
 
 func (b *BunUpdateQuery) Table(table string) common.UpdateQuery {
 	b.query = b.query.Table(table)
+	if b.model == nil {
+		// Try to get table name from table string if model is not set
+
+		model, err := modelregistry.GetModelByName(table)
+		if err == nil {
+			b.model = model
+		}
+	}
 	return b
 }
 

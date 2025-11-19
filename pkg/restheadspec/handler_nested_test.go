@@ -132,7 +132,7 @@ func TestShouldUseNestedProcessor(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "Data with nested posts",
+			name: "Data with simple nested posts (no further nesting)",
 			data: map[string]interface{}{
 				"name": "John",
 				"posts": []map[string]interface{}{
@@ -140,7 +140,23 @@ func TestShouldUseNestedProcessor(t *testing.T) {
 				},
 			},
 			model:    TestUser{},
-			expected: true,
+			expected: false, // Simple one-level nesting doesn't require nested processor
+		},
+		{
+			name: "Data with deeply nested relations",
+			data: map[string]interface{}{
+				"name": "John",
+				"posts": []map[string]interface{}{
+					{
+						"title": "Post 1",
+						"comments": []map[string]interface{}{
+							{"content": "Comment 1"},
+						},
+					},
+				},
+			},
+			model:    TestUser{},
+			expected: true, // Multi-level nesting requires nested processor
 		},
 		{
 			name: "Data without nested relations",
@@ -158,6 +174,20 @@ func TestShouldUseNestedProcessor(t *testing.T) {
 			},
 			model:    TestUser{},
 			expected: true,
+		},
+		{
+			name: "Nested data with _request field",
+			data: map[string]interface{}{
+				"name": "John",
+				"posts": []map[string]interface{}{
+					{
+						"_request": "insert",
+						"title":    "Post 1",
+					},
+				},
+			},
+			model:    TestUser{},
+			expected: true, // _request at nested level requires nested processor
 		},
 	}
 

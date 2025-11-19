@@ -378,8 +378,16 @@ func (p *NestedCUDProcessor) getTableNameForModel(model interface{}, defaultName
 }
 
 // ShouldUseNestedProcessor determines if we should use nested CUD processing
-// It checks if the data contains nested relations or a _request field
+// It recursively checks if the data contains:
+// 1. A _request field at any level, OR
+// 2. Nested relations that themselves contain further nested relations or _request fields
+// This ensures nested processing is only used when there are deeply nested operations
 func ShouldUseNestedProcessor(data map[string]interface{}, model interface{}, relationshipHelper RelationshipInfoProvider) bool {
+	return shouldUseNestedProcessorDepth(data, model, relationshipHelper, 0)
+}
+
+// shouldUseNestedProcessorDepth is the internal recursive implementation with depth tracking
+func shouldUseNestedProcessorDepth(data map[string]interface{}, model interface{}, relationshipHelper RelationshipInfoProvider, depth int) bool {
 	// Check for _request field
 	if _, hasCRUDRequest := data["_request"]; hasCRUDRequest {
 		return true
@@ -407,19 +415,33 @@ func ShouldUseNestedProcessor(data map[string]interface{}, model interface{}, re
 		if relInfo != nil {
 			// Check if the value is actually nested data (object or array)
 			switch v := value.(type) {
-			case map[string]interface{}:
-				//logger.Debug("Found nested relation field: %s", key)
-				return ShouldUseNestedProcessor(v, relInfo.RelatedModel, relationshipHelper)
-			case []interface{}, []map[string]interface{}:
-				//logger.Debug("Found nested relation field: %s", key)
-				for _, item := range v.([]interface{}) {
-					if itemMap, ok := item.(map[string]interface{}); ok {
-						if ShouldUseNestedProcessor(itemMap, relInfo.RelatedModel, relationshipHelper) {
+			case map[string]interface{}, []interface{}, []map[string]interface{}:
+				// If we're already at a nested level (depth > 0) and found a relation,
+				// that means we have multi-level nesting, so return true
+				if depth > 0 {
+					return true
+				}
+				// At depth 0, recurse to check if the nested data has further nesting
+				switch typedValue := v.(type) {
+				case map[string]interface{}:
+					if shouldUseNestedProcessorDepth(typedValue, relInfo.RelatedModel, relationshipHelper, depth+1) {
+						return true
+					}
+				case []interface{}:
+					for _, item := range typedValue {
+						if itemMap, ok := item.(map[string]interface{}); ok {
+							if shouldUseNestedProcessorDepth(itemMap, relInfo.RelatedModel, relationshipHelper, depth+1) {
+								return true
+							}
+						}
+					}
+				case []map[string]interface{}:
+					for _, itemMap := range typedValue {
+						if shouldUseNestedProcessorDepth(itemMap, relInfo.RelatedModel, relationshipHelper, depth+1) {
 							return true
 						}
 					}
 				}
-				return false
 			}
 		}
 	}
