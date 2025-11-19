@@ -402,25 +402,41 @@ func testRestHeadSpecCRUD(t *testing.T, serverURL string) {
 		resp := makeRestHeadSpecRequest(t, serverURL, fmt.Sprintf("/restheadspec/departments/%s", deptID), "GET", nil, nil)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-		// RestHeadSpec may return data directly as array or wrapped in response object
+		// RestHeadSpec may return data directly as array/object or wrapped in response object
 		body, err := io.ReadAll(resp.Body)
 		assert.NoError(t, err, "Failed to read response body")
 
-		// Try to decode as array first (simple format)
+		// Try to decode as array first (simple format - multiple records or disabled SingleRecordAsObject)
 		var dataArray []interface{}
 		if err := json.Unmarshal(body, &dataArray); err == nil {
 			assert.GreaterOrEqual(t, len(dataArray), 1, "Should find department")
-			logger.Info("Department read successfully (simple format): %s", deptID)
+			logger.Info("Department read successfully (simple format - array): %s", deptID)
 			return
 		}
 
-		// Try to decode as standard response object (detail format)
-		var result map[string]interface{}
-		if err := json.Unmarshal(body, &result); err == nil {
-			if success, ok := result["success"]; ok && success != nil && success.(bool) {
-				if data, ok := result["data"].([]interface{}); ok {
+		// Try to decode as a single object first (simple format with SingleRecordAsObject enabled)
+		var singleObj map[string]interface{}
+		if err := json.Unmarshal(body, &singleObj); err == nil {
+			// Check if it's a data object (not a response wrapper)
+			if _, hasSuccess := singleObj["success"]; !hasSuccess {
+				// This is a direct data object (simple format, single record)
+				assert.NotEmpty(t, singleObj, "Should find department")
+				logger.Info("Department read successfully (simple format - single object): %s", deptID)
+				return
+			}
+
+			// Otherwise it's a standard response object (detail format)
+			if success, ok := singleObj["success"]; ok && success != nil && success.(bool) {
+				// Check if data is an array
+				if data, ok := singleObj["data"].([]interface{}); ok {
 					assert.GreaterOrEqual(t, len(data), 1, "Should find department")
-					logger.Info("Department read successfully (detail format): %s", deptID)
+					logger.Info("Department read successfully (detail format - array): %s", deptID)
+					return
+				}
+				// Check if data is a single object (SingleRecordAsObject feature in detail format)
+				if data, ok := singleObj["data"].(map[string]interface{}); ok {
+					assert.NotEmpty(t, data, "Should find department")
+					logger.Info("Department read successfully (detail format - single object): %s", deptID)
 					return
 				}
 			}
@@ -446,25 +462,41 @@ func testRestHeadSpecCRUD(t *testing.T, serverURL string) {
 		resp := makeRestHeadSpecRequest(t, serverURL, "/restheadspec/employees", "GET", nil, headers)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-		// RestHeadSpec may return data directly as array or wrapped in response object
+		// RestHeadSpec may return data directly as array/object or wrapped in response object
 		body, err := io.ReadAll(resp.Body)
 		assert.NoError(t, err, "Failed to read response body")
 
-		// Try array format first
+		// Try array format first (multiple records or disabled SingleRecordAsObject)
 		var dataArray []interface{}
 		if err := json.Unmarshal(body, &dataArray); err == nil {
 			assert.GreaterOrEqual(t, len(dataArray), 1, "Should find at least one employee")
-			logger.Info("Employees read with filter successfully (simple format), found: %d", len(dataArray))
+			logger.Info("Employees read with filter successfully (simple format - array), found: %d", len(dataArray))
 			return
 		}
 
-		// Try standard response format
-		var result map[string]interface{}
-		if err := json.Unmarshal(body, &result); err == nil {
-			if success, ok := result["success"]; ok && success != nil && success.(bool) {
-				if data, ok := result["data"].([]interface{}); ok {
+		// Try to decode as a single object (simple format with SingleRecordAsObject enabled)
+		var singleObj map[string]interface{}
+		if err := json.Unmarshal(body, &singleObj); err == nil {
+			// Check if it's a data object (not a response wrapper)
+			if _, hasSuccess := singleObj["success"]; !hasSuccess {
+				// This is a direct data object (simple format, single record)
+				assert.NotEmpty(t, singleObj, "Should find at least one employee")
+				logger.Info("Employees read with filter successfully (simple format - single object), found: 1")
+				return
+			}
+
+			// Otherwise it's a standard response object (detail format)
+			if success, ok := singleObj["success"]; ok && success != nil && success.(bool) {
+				// Check if data is an array
+				if data, ok := singleObj["data"].([]interface{}); ok {
 					assert.GreaterOrEqual(t, len(data), 1, "Should find at least one employee")
-					logger.Info("Employees read with filter successfully (detail format), found: %d", len(data))
+					logger.Info("Employees read with filter successfully (detail format - array), found: %d", len(data))
+					return
+				}
+				// Check if data is a single object (SingleRecordAsObject feature in detail format)
+				if data, ok := singleObj["data"].(map[string]interface{}); ok {
+					assert.NotEmpty(t, data, "Should find at least one employee")
+					logger.Info("Employees read with filter successfully (detail format - single object), found: 1")
 					return
 				}
 			}

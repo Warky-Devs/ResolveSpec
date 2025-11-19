@@ -37,6 +37,9 @@ type ExtendedRequestOptions struct {
 	// Response format
 	ResponseFormat string // "simple", "detail", "syncfusion"
 
+	// Single record normalization - convert single-element arrays to objects
+	SingleRecordAsObject bool
+
 	// Transaction
 	AtomicTransaction bool
 }
@@ -99,10 +102,11 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 			Sort:    make([]common.SortOption, 0),
 			Preload: make([]common.PreloadOption, 0),
 		},
-		AdvancedSQL:    make(map[string]string),
-		ComputedQL:     make(map[string]string),
-		Expand:         make([]ExpandOption, 0),
-		ResponseFormat: "simple", // Default response format
+		AdvancedSQL:          make(map[string]string),
+		ComputedQL:           make(map[string]string),
+		Expand:               make([]ExpandOption, 0),
+		ResponseFormat:       "simple",           // Default response format
+		SingleRecordAsObject: true,               // Default: normalize single-element arrays to objects
 	}
 
 	// Get all headers
@@ -199,6 +203,13 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 			options.ResponseFormat = "detail"
 		case strings.HasPrefix(normalizedKey, "x-syncfusion"):
 			options.ResponseFormat = "syncfusion"
+		case strings.HasPrefix(normalizedKey, "x-single-record-as-object"):
+			// Parse as boolean - "false" disables, "true" enables (default is true)
+			if strings.EqualFold(decodedValue, "false") {
+				options.SingleRecordAsObject = false
+			} else if strings.EqualFold(decodedValue, "true") {
+				options.SingleRecordAsObject = true
+			}
 
 		// Transaction Control
 		case strings.HasPrefix(normalizedKey, "x-transaction-atomic"):

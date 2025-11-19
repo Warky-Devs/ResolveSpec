@@ -588,7 +588,7 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 				return
 			}
 			logger.Info("Successfully created record with nested data, ID: %v", result.ID)
-			h.sendResponse(w, result.Data, nil)
+			h.sendResponseWithOptions(w, result.Data, nil, &options)
 			return
 		}
 	}
@@ -672,7 +672,7 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 			}
 
 			logger.Info("Successfully created %d records with nested data", len(results))
-			h.sendResponse(w, results, nil)
+			h.sendResponseWithOptions(w, results, nil, &options)
 			return
 		}
 
@@ -789,7 +789,7 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 		return
 	}
 
-	h.sendResponse(w, modelValue, nil)
+	h.sendResponseWithOptions(w, modelValue, nil, &options)
 }
 
 func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id string, idPtr *int64, data interface{}, options ExtendedRequestOptions) {
@@ -843,7 +843,7 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 			return
 		}
 		logger.Info("Successfully updated record with nested data, rows: %d", result.AffectedRows)
-		h.sendResponse(w, result.Data, nil)
+		h.sendResponseWithOptions(w, result.Data, nil, &options)
 		return
 	}
 
@@ -932,7 +932,7 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 		return
 	}
 
-	h.sendResponse(w, responseData, nil)
+	h.sendResponseWithOptions(w, responseData, nil, &options)
 }
 
 func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id string, data interface{}) {
@@ -1434,6 +1434,16 @@ func (h *Handler) isNullable(field reflect.StructField) bool {
 }
 
 func (h *Handler) sendResponse(w common.ResponseWriter, data interface{}, metadata *common.Metadata) {
+	h.sendResponseWithOptions(w, data, metadata, nil)
+}
+
+// sendResponseWithOptions sends a response with optional formatting
+func (h *Handler) sendResponseWithOptions(w common.ResponseWriter, data interface{}, metadata *common.Metadata, options *ExtendedRequestOptions) {
+	// Normalize single-record arrays to objects if requested
+	if options != nil && options.SingleRecordAsObject {
+		data = h.normalizeResultArray(data)
+	}
+
 	response := common.Response{
 		Success:  true,
 		Data:     data,
@@ -1445,8 +1455,35 @@ func (h *Handler) sendResponse(w common.ResponseWriter, data interface{}, metada
 	}
 }
 
+// normalizeResultArray converts a single-element array to an object if requested
+// Returns the single element if data is a slice/array with exactly one element, otherwise returns data unchanged
+func (h *Handler) normalizeResultArray(data interface{}) interface{} {
+	if data == nil {
+		return data
+	}
+
+	// Use reflection to check if data is a slice or array
+	dataValue := reflect.ValueOf(data)
+	if dataValue.Kind() == reflect.Ptr {
+		dataValue = dataValue.Elem()
+	}
+
+	// Check if it's a slice or array with exactly one element
+	if (dataValue.Kind() == reflect.Slice || dataValue.Kind() == reflect.Array) && dataValue.Len() == 1 {
+		// Return the single element
+		return dataValue.Index(0).Interface()
+	}
+
+	return data
+}
+
 // sendFormattedResponse sends response with formatting options
 func (h *Handler) sendFormattedResponse(w common.ResponseWriter, data interface{}, metadata *common.Metadata, options ExtendedRequestOptions) {
+	// Normalize single-record arrays to objects if requested
+	if options.SingleRecordAsObject {
+		data = h.normalizeResultArray(data)
+	}
+
 	// Clean JSON if requested (remove null/empty fields)
 	if options.CleanJSON {
 		data = h.cleanJSON(data)

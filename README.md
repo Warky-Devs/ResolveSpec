@@ -31,6 +31,8 @@ Both share the same core architecture and provide dynamic data querying, relatio
 - [RestHeadSpec: Header-Based API](#restheadspec-header-based-api-1)
   - [Lifecycle Hooks](#lifecycle-hooks)
   - [Cursor Pagination](#cursor-pagination)
+  - [Response Formats](#response-formats)
+  - [Single Record as Object](#single-record-as-object-default-behavior)
 - [Example Usage](#example-usage)
   - [Recursive CRUD Operations](#recursive-crud-operations-)
 - [Testing](#testing)
@@ -59,6 +61,7 @@ Both share the same core architecture and provide dynamic data querying, relatio
 - **🆕 Lifecycle Hooks**: Before/after hooks for create, read, update, and delete operations
 - **🆕 Cursor Pagination**: Efficient cursor-based pagination with complex sort support
 - **🆕 Multiple Response Formats**: Simple, detailed, and Syncfusion-compatible formats
+- **🆕 Single Record as Object**: Automatically normalize single-element arrays to objects (enabled by default)
 - **🆕 Advanced Filtering**: Field filters, search operators, AND/OR logic, and custom SQL
 - **🆕 Base64 Encoding**: Support for base64-encoded header values
 
@@ -163,6 +166,7 @@ restheadspec.SetupMuxRoutes(router, handler)
 | `X-Limit` | Limit results | `50` |
 | `X-Offset` | Offset for pagination | `100` |
 | `X-Clean-JSON` | Remove null/empty fields | `true` |
+| `X-Single-Record-As-Object` | Return single records as objects (default: `true`) | `false` |
 
 **Available Operators**: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `contains`, `startswith`, `endswith`, `between`, `betweeninclusive`, `in`, `empty`, `notempty`
 
@@ -302,6 +306,55 @@ RestHeadSpec supports multiple response formats:
   "count": 100
 }
 ```
+
+### Single Record as Object (Default Behavior)
+
+By default, RestHeadSpec automatically converts single-element arrays into objects for cleaner API responses. This provides a better developer experience when fetching individual records.
+
+**Default behavior (enabled)**:
+```http
+GET /public/users/123
+```
+```json
+{
+  "success": true,
+  "data": { "id": 123, "name": "John", "email": "john@example.com" }
+}
+```
+
+Instead of:
+```json
+{
+  "success": true,
+  "data": [{ "id": 123, "name": "John", "email": "john@example.com" }]
+}
+```
+
+**To disable** (force arrays for consistency):
+```http
+GET /public/users/123
+X-Single-Record-As-Object: false
+```
+```json
+{
+  "success": true,
+  "data": [{ "id": 123, "name": "John", "email": "john@example.com" }]
+}
+```
+
+**How it works**:
+- When a query returns exactly **one record**, it's returned as an object
+- When a query returns **multiple records**, they're returned as an array
+- Set `X-Single-Record-As-Object: false` to always receive arrays
+- Works with all response formats (simple, detail, syncfusion)
+- Applies to both read operations and create/update returning clauses
+
+**Benefits**:
+- Cleaner API responses for single-record queries
+- No need to unwrap single-element arrays on the client side
+- Better TypeScript/type inference support
+- Consistent with common REST API patterns
+- Backward compatible via header opt-out
 
 ## Example Usage
 
@@ -924,6 +977,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Cursor Pagination**: Efficient cursor-based pagination with complex sorting
 - **Advanced Filtering**: Field filters, search operators, AND/OR logic
 - **Multiple Response Formats**: Simple, detailed, and Syncfusion-compatible responses
+- **Single Record as Object**: Automatically return single-element arrays as objects (default, toggleable via header)
 - **Base64 Support**: Base64-encoded header values for complex queries
 - **Type-Aware Filtering**: Automatic type detection and conversion for filters
 
