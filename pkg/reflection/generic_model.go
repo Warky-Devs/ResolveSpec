@@ -18,6 +18,7 @@ type ModelFieldDetail struct {
 }
 
 // GetModelColumnDetail - Get a list of columns in the SQL declaration of the model
+// This function recursively processes embedded structs to include their fields
 func GetModelColumnDetail(record reflect.Value) []ModelFieldDetail {
 	defer func() {
 		if r := recover(); r != nil {
@@ -37,14 +38,43 @@ func GetModelColumnDetail(record reflect.Value) []ModelFieldDetail {
 	if record.Kind() != reflect.Struct {
 		return lst
 	}
+
+	collectFieldDetails(record, &lst)
+
+	return lst
+}
+
+// collectFieldDetails recursively collects field details from a struct value and its embedded fields
+func collectFieldDetails(record reflect.Value, lst *[]ModelFieldDetail) {
 	modeltype := record.Type()
 
 	for i := 0; i < modeltype.NumField(); i++ {
 		fieldtype := modeltype.Field(i)
+		fieldValue := record.Field(i)
+
+		// Check if this is an embedded struct
+		if fieldtype.Anonymous {
+			// Unwrap pointer type if necessary
+			embeddedValue := fieldValue
+			if fieldValue.Kind() == reflect.Pointer {
+				if fieldValue.IsNil() {
+					// Skip nil embedded pointers
+					continue
+				}
+				embeddedValue = fieldValue.Elem()
+			}
+
+			// Recursively process embedded struct
+			if embeddedValue.Kind() == reflect.Struct {
+				collectFieldDetails(embeddedValue, lst)
+				continue
+			}
+		}
+
 		gormdetail := fieldtype.Tag.Get("gorm")
 		gormdetail = strings.Trim(gormdetail, " ")
 		fielddetail := ModelFieldDetail{}
-		fielddetail.FieldValue = record.Field(i)
+		fielddetail.FieldValue = fieldValue
 		fielddetail.Name = fieldtype.Name
 		fielddetail.DataType = fieldtype.Type.Name()
 		fielddetail.SQLName = fnFindKeyVal(gormdetail, "column:")
@@ -80,10 +110,8 @@ func GetModelColumnDetail(record reflect.Value) []ModelFieldDetail {
 		}
 		// ";foreignkey:rid_parent;association_foreignkey:id_atevent;save_associations:false;association_autocreate:false;"
 
-		lst = append(lst, fielddetail)
-
+		*lst = append(*lst, fielddetail)
 	}
-	return lst
 }
 
 func fnFindKeyVal(src, key string) string {

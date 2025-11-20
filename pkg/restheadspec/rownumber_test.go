@@ -10,7 +10,7 @@ import (
 type TestModel struct {
 	ID        int64  `json:"id" bun:"id,pk"`
 	Name      string `json:"name" bun:"name"`
-	RowNumber int64  `json:"_rownumber,omitempty" gorm:"-" bun:"-"`
+	RowNumber int64  `json:"_rownumber,omitempty" gorm:"-" bun:",scanonly"`
 }
 
 func TestSetRowNumbersOnRecords(t *testing.T) {

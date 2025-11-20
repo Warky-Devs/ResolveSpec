@@ -231,3 +231,246 @@ func TestGetModelColumns(t *testing.T) {
 		})
 	}
 }
+
+// Test models with embedded structs
+
+type BaseModel struct {
+	ID        int    `bun:"rid_base,pk" json:"id"`
+	CreatedAt string `bun:"created_at" json:"created_at"`
+}
+
+type AdhocBuffer struct {
+	CQL1      string `json:"cql1,omitempty" gorm:"->" bun:",scanonly"`
+	CQL2      string `json:"cql2,omitempty" gorm:"->" bun:",scanonly"`
+	RowNumber int64  `json:"_rownumber,omitempty" gorm:"-" bun:",scanonly"`
+}
+
+type ModelWithEmbedded struct {
+	BaseModel
+	Name        string `bun:"name" json:"name"`
+	Description string `bun:"description" json:"description"`
+	AdhocBuffer
+}
+
+type GormBaseModel struct {
+	ID        int    `gorm:"column:rid_base;primaryKey" json:"id"`
+	CreatedAt string `gorm:"column:created_at" json:"created_at"`
+}
+
+type GormAdhocBuffer struct {
+	CQL1      string `json:"cql1,omitempty" gorm:"column:cql1;->" bun:",scanonly"`
+	CQL2      string `json:"cql2,omitempty" gorm:"column:cql2;->" bun:",scanonly"`
+	RowNumber int64  `json:"_rownumber,omitempty" gorm:"-" bun:",scanonly"`
+}
+
+type GormModelWithEmbedded struct {
+	GormBaseModel
+	Name        string `gorm:"column:name" json:"name"`
+	Description string `gorm:"column:description" json:"description"`
+	GormAdhocBuffer
+}
+
+func TestGetPrimaryKeyNameWithEmbedded(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    any
+		expected string
+	}{
+		{
+			name:     "Bun model with embedded base",
+			model:    ModelWithEmbedded{},
+			expected: "rid_base",
+		},
+		{
+			name:     "Bun model with embedded base (pointer)",
+			model:    &ModelWithEmbedded{},
+			expected: "rid_base",
+		},
+		{
+			name:     "GORM model with embedded base",
+			model:    GormModelWithEmbedded{},
+			expected: "rid_base",
+		},
+		{
+			name:     "GORM model with embedded base (pointer)",
+			model:    &GormModelWithEmbedded{},
+			expected: "rid_base",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetPrimaryKeyName(tt.model)
+			if result != tt.expected {
+				t.Errorf("GetPrimaryKeyName() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetPrimaryKeyValueWithEmbedded(t *testing.T) {
+	bunModel := ModelWithEmbedded{
+		BaseModel: BaseModel{
+			ID:        123,
+			CreatedAt: "2024-01-01",
+		},
+		Name:        "Test",
+		Description: "Test Description",
+	}
+
+	gormModel := GormModelWithEmbedded{
+		GormBaseModel: GormBaseModel{
+			ID:        456,
+			CreatedAt: "2024-01-02",
+		},
+		Name:        "GORM Test",
+		Description: "GORM Test Description",
+	}
+
+	tests := []struct {
+		name     string
+		model    any
+		expected any
+	}{
+		{
+			name:     "Bun model with embedded base",
+			model:    bunModel,
+			expected: 123,
+		},
+		{
+			name:     "Bun model with embedded base (pointer)",
+			model:    &bunModel,
+			expected: 123,
+		},
+		{
+			name:     "GORM model with embedded base",
+			model:    gormModel,
+			expected: 456,
+		},
+		{
+			name:     "GORM model with embedded base (pointer)",
+			model:    &gormModel,
+			expected: 456,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetPrimaryKeyValue(tt.model)
+			if result != tt.expected {
+				t.Errorf("GetPrimaryKeyValue() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetModelColumnsWithEmbedded(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    any
+		expected []string
+	}{
+		{
+			name:     "Bun model with embedded structs",
+			model:    ModelWithEmbedded{},
+			expected: []string{"rid_base", "created_at", "name", "description", "cql1", "cql2", "_rownumber"},
+		},
+		{
+			name:     "Bun model with embedded structs (pointer)",
+			model:    &ModelWithEmbedded{},
+			expected: []string{"rid_base", "created_at", "name", "description", "cql1", "cql2", "_rownumber"},
+		},
+		{
+			name:     "GORM model with embedded structs",
+			model:    GormModelWithEmbedded{},
+			expected: []string{"rid_base", "created_at", "name", "description", "cql1", "cql2", "_rownumber"},
+		},
+		{
+			name:     "GORM model with embedded structs (pointer)",
+			model:    &GormModelWithEmbedded{},
+			expected: []string{"rid_base", "created_at", "name", "description", "cql1", "cql2", "_rownumber"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetModelColumns(tt.model)
+			if len(result) != len(tt.expected) {
+				t.Errorf("GetModelColumns() returned %d columns, want %d. Got: %v", len(result), len(tt.expected), result)
+				return
+			}
+			for i, col := range result {
+				if col != tt.expected[i] {
+					t.Errorf("GetModelColumns()[%d] = %v, want %v", i, col, tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+func TestIsColumnWritableWithEmbedded(t *testing.T) {
+	tests := []struct {
+		name       string
+		model      any
+		columnName string
+		expected   bool
+	}{
+		{
+			name:       "Bun model - writable column in main struct",
+			model:      ModelWithEmbedded{},
+			columnName: "name",
+			expected:   true,
+		},
+		{
+			name:       "Bun model - writable column in embedded base",
+			model:      ModelWithEmbedded{},
+			columnName: "rid_base",
+			expected:   true,
+		},
+		{
+			name:       "Bun model - scanonly column in embedded adhoc buffer",
+			model:      ModelWithEmbedded{},
+			columnName: "cql1",
+			expected:   false,
+		},
+		{
+			name:       "Bun model - scanonly column _rownumber",
+			model:      ModelWithEmbedded{},
+			columnName: "_rownumber",
+			expected:   false,
+		},
+		{
+			name:       "GORM model - writable column in main struct",
+			model:      GormModelWithEmbedded{},
+			columnName: "name",
+			expected:   true,
+		},
+		{
+			name:       "GORM model - writable column in embedded base",
+			model:      GormModelWithEmbedded{},
+			columnName: "rid_base",
+			expected:   true,
+		},
+		{
+			name:       "GORM model - readonly column in embedded adhoc buffer",
+			model:      GormModelWithEmbedded{},
+			columnName: "cql1",
+			expected:   false,
+		},
+		{
+			name:       "GORM model - readonly column _rownumber",
+			model:      GormModelWithEmbedded{},
+			columnName: "_rownumber",
+			expected:   false, // bun:",scanonly" marks it as read-only, takes precedence over gorm:"-"
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsColumnWritable(tt.model, tt.columnName)
+			if result != tt.expected {
+				t.Errorf("IsColumnWritable(%s) = %v, want %v", tt.columnName, result, tt.expected)
+			}
+		})
+	}
+}

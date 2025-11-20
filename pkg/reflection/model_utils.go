@@ -47,7 +47,7 @@ func GetPrimaryKeyName(model any) string {
 
 // GetPrimaryKeyValue extracts the primary key value from a model instance
 // Returns the value of the primary key field
-func GetPrimaryKeyValue(model any) interface{} {
+func GetPrimaryKeyValue(model any) any {
 	if model == nil || reflect.TypeOf(model) == nil {
 		return nil
 	}
@@ -61,38 +61,51 @@ func GetPrimaryKeyValue(model any) interface{} {
 		return nil
 	}
 
-	typ := val.Type()
-
 	// Try Bun tag first
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		bunTag := field.Tag.Get("bun")
-		if strings.Contains(bunTag, "pk") {
-			fieldValue := val.Field(i)
-			if fieldValue.CanInterface() {
-				return fieldValue.Interface()
-			}
-		}
+	if pkValue := findPrimaryKeyValue(val, "bun"); pkValue != nil {
+		return pkValue
 	}
 
 	// Fall back to GORM tag
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		gormTag := field.Tag.Get("gorm")
-		if strings.Contains(gormTag, "primaryKey") {
-			fieldValue := val.Field(i)
-			if fieldValue.CanInterface() {
-				return fieldValue.Interface()
-			}
-		}
+	if pkValue := findPrimaryKeyValue(val, "gorm"); pkValue != nil {
+		return pkValue
 	}
 
 	// Last resort: look for field named "ID" or "Id"
+	if pkValue := findFieldByName(val, "id"); pkValue != nil {
+		return pkValue
+	}
+
+	return nil
+}
+
+// findPrimaryKeyValue recursively searches for a primary key field in the struct
+func findPrimaryKeyValue(val reflect.Value, ormType string) any {
+	typ := val.Type()
+
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		if strings.ToLower(field.Name) == "id" {
-			fieldValue := val.Field(i)
-			if fieldValue.CanInterface() {
+		fieldValue := val.Field(i)
+
+		// Check if this is an embedded struct
+		if field.Anonymous && field.Type.Kind() == reflect.Struct {
+			// Recursively search in embedded struct
+			if pkValue := findPrimaryKeyValue(fieldValue, ormType); pkValue != nil {
+				return pkValue
+			}
+			continue
+		}
+
+		// Check for primary key tag
+		switch ormType {
+		case "bun":
+			bunTag := field.Tag.Get("bun")
+			if strings.Contains(bunTag, "pk") && fieldValue.CanInterface() {
+				return fieldValue.Interface()
+			}
+		case "gorm":
+			gormTag := field.Tag.Get("gorm")
+			if strings.Contains(gormTag, "primaryKey") && fieldValue.CanInterface() {
 				return fieldValue.Interface()
 			}
 		}
@@ -101,8 +114,35 @@ func GetPrimaryKeyValue(model any) interface{} {
 	return nil
 }
 
+// findFieldByName recursively searches for a field by name in the struct
+func findFieldByName(val reflect.Value, name string) any {
+	typ := val.Type()
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		fieldValue := val.Field(i)
+
+		// Check if this is an embedded struct
+		if field.Anonymous && field.Type.Kind() == reflect.Struct {
+			// Recursively search in embedded struct
+			if result := findFieldByName(fieldValue, name); result != nil {
+				return result
+			}
+			continue
+		}
+
+		// Check if field name matches
+		if strings.ToLower(field.Name) == name && fieldValue.CanInterface() {
+			return fieldValue.Interface()
+		}
+	}
+
+	return nil
+}
+
 // GetModelColumns extracts all column names from a model using reflection
 // It checks bun tags first, then gorm tags, then json tags, and finally falls back to lowercase field names
+// This function recursively processes embedded structs to include their fields
 func GetModelColumns(model any) []string {
 	var columns []string
 
@@ -118,18 +158,38 @@ func GetModelColumns(model any) []string {
 		return columns
 	}
 
-	for i := 0; i < modelType.NumField(); i++ {
-		field := modelType.Field(i)
+	collectColumnsFromType(modelType, &columns)
+
+	return columns
+}
+
+// collectColumnsFromType recursively collects column names from a struct type and its embedded fields
+func collectColumnsFromType(typ reflect.Type, columns *[]string) {
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+
+		// Check if this is an embedded struct
+		if field.Anonymous {
+			// Unwrap pointer type if necessary
+			fieldType := field.Type
+			if fieldType.Kind() == reflect.Pointer {
+				fieldType = fieldType.Elem()
+			}
+
+			// Recursively process embedded struct
+			if fieldType.Kind() == reflect.Struct {
+				collectColumnsFromType(fieldType, columns)
+				continue
+			}
+		}
 
 		// Get column name using the same logic as primary key extraction
 		columnName := getColumnNameFromField(field)
 
 		if columnName != "" {
-			columns = append(columns, columnName)
+			*columns = append(*columns, columnName)
 		}
 	}
-
-	return columns
 }
 
 // getColumnNameFromField extracts the column name from a struct field
@@ -166,6 +226,7 @@ func getColumnNameFromField(field reflect.StructField) string {
 }
 
 // getPrimaryKeyFromReflection uses reflection to find the primary key field
+// This function recursively searches embedded structs
 func getPrimaryKeyFromReflection(model any, ormType string) string {
 	val := reflect.ValueOf(model)
 	if val.Kind() == reflect.Pointer {
@@ -177,8 +238,30 @@ func getPrimaryKeyFromReflection(model any, ormType string) string {
 	}
 
 	typ := val.Type()
+	return findPrimaryKeyNameFromType(typ, ormType)
+}
+
+// findPrimaryKeyNameFromType recursively searches for the primary key field name in a struct type
+func findPrimaryKeyNameFromType(typ reflect.Type, ormType string) string {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
+
+		// Check if this is an embedded struct
+		if field.Anonymous {
+			// Unwrap pointer type if necessary
+			fieldType := field.Type
+			if fieldType.Kind() == reflect.Pointer {
+				fieldType = fieldType.Elem()
+			}
+
+			// Recursively search in embedded struct
+			if fieldType.Kind() == reflect.Struct {
+				if pkName := findPrimaryKeyNameFromType(fieldType, ormType); pkName != "" {
+					return pkName
+				}
+			}
+			continue
+		}
 
 		switch ormType {
 		case "gorm":
@@ -231,6 +314,9 @@ func ExtractColumnFromGormTag(tag string) string {
 // Example: ",pk" -> "" (will fall back to json tag)
 func ExtractColumnFromBunTag(tag string) string {
 	parts := strings.Split(tag, ",")
+	if strings.HasPrefix(strings.ToLower(tag), "table:") || strings.HasPrefix(strings.ToLower(tag), "rel:") || strings.HasPrefix(strings.ToLower(tag), "join:") {
+		return ""
+	}
 	if len(parts) > 0 && parts[0] != "" {
 		return parts[0]
 	}
@@ -240,6 +326,7 @@ func ExtractColumnFromBunTag(tag string) string {
 // IsColumnWritable checks if a column can be written to in the database
 // For bun: returns false if the field has "scanonly" tag
 // For gorm: returns false if the field has "<-:false" or "->" (read-only) tag
+// This function recursively searches embedded structs
 func IsColumnWritable(model any, columnName string) bool {
 	modelType := reflect.TypeOf(model)
 
@@ -253,8 +340,37 @@ func IsColumnWritable(model any, columnName string) bool {
 		return false
 	}
 
-	for i := 0; i < modelType.NumField(); i++ {
-		field := modelType.Field(i)
+	found, writable := isColumnWritableInType(modelType, columnName)
+	if found {
+		return writable
+	}
+
+	// Column not found in model, allow it (might be a dynamic column)
+	return true
+}
+
+// isColumnWritableInType recursively searches for a column and checks if it's writable
+// Returns (found, writable) where found indicates if the column was found
+func isColumnWritableInType(typ reflect.Type, columnName string) (bool, bool) {
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+
+		// Check if this is an embedded struct
+		if field.Anonymous {
+			// Unwrap pointer type if necessary
+			fieldType := field.Type
+			if fieldType.Kind() == reflect.Pointer {
+				fieldType = fieldType.Elem()
+			}
+
+			// Recursively search in embedded struct
+			if fieldType.Kind() == reflect.Struct {
+				if found, writable := isColumnWritableInType(fieldType, columnName); found {
+					return true, writable
+				}
+			}
+			continue
+		}
 
 		// Check if this field matches the column name
 		fieldColumnName := getColumnNameFromField(field)
@@ -262,11 +378,12 @@ func IsColumnWritable(model any, columnName string) bool {
 			continue
 		}
 
+		// Found the field, now check if it's writable
 		// Check bun tag for scanonly
 		bunTag := field.Tag.Get("bun")
 		if bunTag != "" {
 			if isBunFieldScanOnly(bunTag) {
-				return false
+				return true, false
 			}
 		}
 
@@ -274,16 +391,16 @@ func IsColumnWritable(model any, columnName string) bool {
 		gormTag := field.Tag.Get("gorm")
 		if gormTag != "" {
 			if isGormFieldReadOnly(gormTag) {
-				return false
+				return true, false
 			}
 		}
 
 		// Column is writable
-		return true
+		return true, true
 	}
 
-	// Column not found in model, allow it (might be a dynamic column)
-	return true
+	// Column not found
+	return false, false
 }
 
 // isBunFieldScanOnly checks if a bun tag indicates the field is scan-only
