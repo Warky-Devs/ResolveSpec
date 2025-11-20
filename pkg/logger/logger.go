@@ -103,3 +103,14 @@ func CatchPanicCallback(location string, cb func(err any)) {
 func CatchPanic(location string) {
 	CatchPanicCallback(location, nil)
 }
+
+// RecoverPanic recovers from panics and returns an error
+// Use this in deferred functions to convert panics into errors
+func RecoverPanic(methodName string) error {
+	if r := recover(); r != nil {
+		stack := debug.Stack()
+		Error("Panic in %s: %v\nStack trace:\n%s", methodName, r, string(stack))
+		return fmt.Errorf("panic in %s: %v", methodName, r)
+	}
+	return nil
+}

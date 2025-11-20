@@ -715,11 +715,15 @@ func (h *Handler) getRelationModel(model interface{}, fieldName string) interfac
 	}
 
 	modelType := reflect.TypeOf(model)
+	if modelType == nil {
+		return nil
+	}
+
 	if modelType.Kind() == reflect.Ptr {
 		modelType = modelType.Elem()
 	}
 
-	if modelType.Kind() != reflect.Struct {
+	if modelType == nil || modelType.Kind() != reflect.Struct {
 		return nil
 	}
 
@@ -731,11 +735,21 @@ func (h *Handler) getRelationModel(model interface{}, fieldName string) interfac
 
 	// Get the target type
 	targetType := field.Type
+	if targetType == nil {
+		return nil
+	}
+
 	if targetType.Kind() == reflect.Slice {
 		targetType = targetType.Elem()
+		if targetType == nil {
+			return nil
+		}
 	}
 	if targetType.Kind() == reflect.Ptr {
 		targetType = targetType.Elem()
+		if targetType == nil {
+			return nil
+		}
 	}
 
 	if targetType.Kind() != reflect.Struct {
@@ -755,9 +769,18 @@ func (h *Handler) resolveRelationName(model interface{}, nameOrTable string) str
 	}
 
 	modelType := reflect.TypeOf(model)
+	if modelType == nil {
+		return nameOrTable
+	}
+
 	// Dereference pointer if needed
 	if modelType.Kind() == reflect.Ptr {
 		modelType = modelType.Elem()
+	}
+
+	// Check again after dereferencing
+	if modelType == nil {
+		return nameOrTable
 	}
 
 	// Ensure it's a struct
