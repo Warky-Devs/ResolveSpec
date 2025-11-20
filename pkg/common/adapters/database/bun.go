@@ -343,9 +343,9 @@ func (b *BunInsertQuery) Returning(columns ...string) common.InsertQuery {
 
 func (b *BunInsertQuery) Exec(ctx context.Context) (common.Result, error) {
 	if b.values != nil {
-		// For Bun, we need to handle this differently
+		// Use Value() for INSERT queries to set column values
 		for k, v := range b.values {
-			b.query = b.query.Set("? = ?", bun.Ident(k), v)
+			b.query = b.query.Value(k, "?", v)
 		}
 	}
 	result, err := b.query.Exec(ctx)
