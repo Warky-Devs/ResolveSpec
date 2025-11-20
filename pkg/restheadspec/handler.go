@@ -869,7 +869,7 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 
 		// Fetch the updated record to return the new values
 		modelValue := reflect.New(reflect.TypeOf(model)).Interface()
-		selectQuery := tx.NewSelect().Model(modelValue).Table(tableName).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(pkName)), targetID)
+		selectQuery := tx.NewSelect().Model(modelValue).Where(fmt.Sprintf("%s = ?", common.QuoteIdent(pkName)), targetID)
 		if err := selectQuery.ScanModel(ctx); err != nil {
 			return fmt.Errorf("failed to fetch updated record: %w", err)
 		}
