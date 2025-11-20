@@ -2,6 +2,7 @@ package restheadspec
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -42,6 +43,9 @@ type ExtendedRequestOptions struct {
 
 	// Transaction
 	AtomicTransaction bool
+
+	// X-Files configuration - comprehensive query options as a single JSON object
+	XFiles *XFiles
 }
 
 // ExpandOption represents a relation expansion configuration
@@ -214,6 +218,10 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request) ExtendedRequestOptio
 		// Transaction Control
 		case strings.HasPrefix(normalizedKey, "x-transaction-atomic"):
 			options.AtomicTransaction = strings.EqualFold(decodedValue, "true")
+
+		// X-Files - comprehensive JSON configuration
+		case strings.HasPrefix(normalizedKey, "x-files"):
+			h.parseXFiles(&options, decodedValue)
 		}
 	}
 
@@ -478,6 +486,259 @@ func (h *Handler) parseCommaSeparated(value string) []string {
 		}
 	}
 	return result
+}
+
+// parseXFiles parses x-files header containing comprehensive JSON configuration
+// and populates ExtendedRequestOptions fields from it
+func (h *Handler) parseXFiles(options *ExtendedRequestOptions, value string) {
+	if value == "" {
+		return
+	}
+
+	var xfiles XFiles
+	if err := json.Unmarshal([]byte(value), &xfiles); err != nil {
+		logger.Warn("Failed to parse x-files header: %v", err)
+		return
+	}
+
+	logger.Debug("Parsed x-files configuration for table: %s", xfiles.TableName)
+
+	// Store the original XFiles for reference
+	options.XFiles = &xfiles
+
+	// Map XFiles fields to ExtendedRequestOptions
+
+	// Column selection
+	if len(xfiles.Columns) > 0 {
+		options.Columns = append(options.Columns, xfiles.Columns...)
+		logger.Debug("X-Files: Added columns: %v", xfiles.Columns)
+	}
+
+	// Omit columns
+	if len(xfiles.OmitColumns) > 0 {
+		options.OmitColumns = append(options.OmitColumns, xfiles.OmitColumns...)
+		logger.Debug("X-Files: Added omit columns: %v", xfiles.OmitColumns)
+	}
+
+	// Computed columns (CQL) -> ComputedQL
+	if len(xfiles.CQLColumns) > 0 {
+		if options.ComputedQL == nil {
+			options.ComputedQL = make(map[string]string)
+		}
+		for i, cqlExpr := range xfiles.CQLColumns {
+			colName := fmt.Sprintf("cql%d", i+1)
+			options.ComputedQL[colName] = cqlExpr
+			logger.Debug("X-Files: Added computed column %s: %s", colName, cqlExpr)
+		}
+	}
+
+	// Sorting
+	if len(xfiles.Sort) > 0 {
+		for _, sortField := range xfiles.Sort {
+			direction := "ASC"
+			colName := sortField
+
+			// Handle direction prefixes
+			if strings.HasPrefix(sortField, "-") {
+				direction = "DESC"
+				colName = strings.TrimPrefix(sortField, "-")
+			} else if strings.HasPrefix(sortField, "+") {
+				colName = strings.TrimPrefix(sortField, "+")
+			}
+
+			// Handle DESC suffix
+			if strings.HasSuffix(strings.ToLower(colName), " desc") {
+				direction = "DESC"
+				colName = strings.TrimSuffix(strings.ToLower(colName), " desc")
+			} else if strings.HasSuffix(strings.ToLower(colName), " asc") {
+				colName = strings.TrimSuffix(strings.ToLower(colName), " asc")
+			}
+
+			options.Sort = append(options.Sort, common.SortOption{
+				Column:    strings.TrimSpace(colName),
+				Direction: direction,
+			})
+		}
+		logger.Debug("X-Files: Added %d sort options", len(xfiles.Sort))
+	}
+
+	// Filter fields
+	if len(xfiles.FilterFields) > 0 {
+		for _, filterField := range xfiles.FilterFields {
+			options.Filters = append(options.Filters, common.FilterOption{
+				Column:        filterField.Field,
+				Operator:      filterField.Operator,
+				Value:         filterField.Value,
+				LogicOperator: "AND", // Default to AND
+			})
+		}
+		logger.Debug("X-Files: Added %d filter fields", len(xfiles.FilterFields))
+	}
+
+	// SQL AND conditions -> CustomSQLWhere
+	if len(xfiles.SqlAnd) > 0 {
+		if options.CustomSQLWhere != "" {
+			options.CustomSQLWhere += " AND "
+		}
+		options.CustomSQLWhere += "(" + strings.Join(xfiles.SqlAnd, " AND ") + ")"
+		logger.Debug("X-Files: Added SQL AND conditions")
+	}
+
+	// SQL OR conditions -> CustomSQLOr
+	if len(xfiles.SqlOr) > 0 {
+		if options.CustomSQLOr != "" {
+			options.CustomSQLOr += " OR "
+		}
+		options.CustomSQLOr += "(" + strings.Join(xfiles.SqlOr, " OR ") + ")"
+		logger.Debug("X-Files: Added SQL OR conditions")
+	}
+
+	// Pagination - Limit
+	if limitStr := xfiles.Limit.String(); limitStr != "" && limitStr != "0" {
+		if limitVal, err := xfiles.Limit.Int64(); err == nil && limitVal > 0 {
+			limit := int(limitVal)
+			options.Limit = &limit
+			logger.Debug("X-Files: Set limit: %d", limit)
+		}
+	}
+
+	// Pagination - Offset
+	if offsetStr := xfiles.Offset.String(); offsetStr != "" && offsetStr != "0" {
+		if offsetVal, err := xfiles.Offset.Int64(); err == nil && offsetVal > 0 {
+			offset := int(offsetVal)
+			options.Offset = &offset
+			logger.Debug("X-Files: Set offset: %d", offset)
+		}
+	}
+
+	// Cursor pagination
+	if xfiles.CursorForward != "" {
+		options.CursorForward = xfiles.CursorForward
+		logger.Debug("X-Files: Set cursor forward")
+	}
+	if xfiles.CursorBackward != "" {
+		options.CursorBackward = xfiles.CursorBackward
+		logger.Debug("X-Files: Set cursor backward")
+	}
+
+	// Flags
+	if xfiles.Skipcount {
+		options.SkipCount = true
+		logger.Debug("X-Files: Set skip count")
+	}
+
+	// Process ParentTables and ChildTables recursively
+	h.processXFilesRelations(&xfiles, options, "")
+}
+
+// processXFilesRelations processes ParentTables and ChildTables from XFiles
+// and adds them as Preload options recursively
+func (h *Handler) processXFilesRelations(xfiles *XFiles, options *ExtendedRequestOptions, basePath string) {
+	if xfiles == nil {
+		return
+	}
+
+	// Process ParentTables
+	if len(xfiles.ParentTables) > 0 {
+		logger.Debug("X-Files: Processing %d parent tables", len(xfiles.ParentTables))
+		for _, parentTable := range xfiles.ParentTables {
+			h.addXFilesPreload(parentTable, options, basePath)
+		}
+	}
+
+	// Process ChildTables
+	if len(xfiles.ChildTables) > 0 {
+		logger.Debug("X-Files: Processing %d child tables", len(xfiles.ChildTables))
+		for _, childTable := range xfiles.ChildTables {
+			h.addXFilesPreload(childTable, options, basePath)
+		}
+	}
+}
+
+// addXFilesPreload converts an XFiles relation into a PreloadOption
+// and recursively processes its children
+func (h *Handler) addXFilesPreload(xfile *XFiles, options *ExtendedRequestOptions, basePath string) {
+	if xfile == nil || xfile.TableName == "" {
+		return
+	}
+
+	// Determine the relation path
+	relationPath := xfile.TableName
+	if basePath != "" {
+		relationPath = basePath + "." + xfile.TableName
+	}
+
+	logger.Debug("X-Files: Adding preload for relation: %s", relationPath)
+
+	// Create PreloadOption from XFiles configuration
+	preloadOpt := common.PreloadOption{
+		Relation:    relationPath,
+		Columns:     xfile.Columns,
+		OmitColumns: xfile.OmitColumns,
+	}
+
+	// Add sorting if specified
+	if len(xfile.Sort) > 0 {
+		preloadOpt.Sort = make([]common.SortOption, 0, len(xfile.Sort))
+		for _, sortField := range xfile.Sort {
+			direction := "ASC"
+			colName := sortField
+
+			// Handle direction prefixes
+			if strings.HasPrefix(sortField, "-") {
+				direction = "DESC"
+				colName = strings.TrimPrefix(sortField, "-")
+			} else if strings.HasPrefix(sortField, "+") {
+				colName = strings.TrimPrefix(sortField, "+")
+			}
+
+			preloadOpt.Sort = append(preloadOpt.Sort, common.SortOption{
+				Column:    strings.TrimSpace(colName),
+				Direction: direction,
+			})
+		}
+	}
+
+	// Add filters if specified
+	if len(xfile.FilterFields) > 0 {
+		preloadOpt.Filters = make([]common.FilterOption, 0, len(xfile.FilterFields))
+		for _, filterField := range xfile.FilterFields {
+			preloadOpt.Filters = append(preloadOpt.Filters, common.FilterOption{
+				Column:        filterField.Field,
+				Operator:      filterField.Operator,
+				Value:         filterField.Value,
+				LogicOperator: "AND",
+			})
+		}
+	}
+
+	// Add WHERE clause if SQL conditions specified
+	whereConditions := make([]string, 0)
+	if len(xfile.SqlAnd) > 0 {
+		whereConditions = append(whereConditions, xfile.SqlAnd...)
+	}
+	if len(whereConditions) > 0 {
+		preloadOpt.Where = strings.Join(whereConditions, " AND ")
+	}
+
+	// Add limit if specified
+	if limitStr := xfile.Limit.String(); limitStr != "" && limitStr != "0" {
+		if limitVal, err := xfile.Limit.Int64(); err == nil && limitVal > 0 {
+			limit := int(limitVal)
+			preloadOpt.Limit = &limit
+		}
+	}
+
+	// Add the preload option
+	options.Preload = append(options.Preload, preloadOpt)
+
+	// Recursively process nested ParentTables and ChildTables
+	if xfile.Recursive {
+		logger.Debug("X-Files: Recursive preload enabled for: %s", relationPath)
+		h.processXFilesRelations(xfile, options, relationPath)
+	} else if len(xfile.ParentTables) > 0 || len(xfile.ChildTables) > 0 {
+		h.processXFilesRelations(xfile, options, relationPath)
+	}
 }
 
 // extractSourceColumn extracts the base column name from PostgreSQL JSON operators

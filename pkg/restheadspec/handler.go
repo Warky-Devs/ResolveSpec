@@ -260,6 +260,10 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		query = query.Table(tableName)
 	}
 
+	// Note: X-Files configuration is now applied via parseXFiles which populates
+	// ExtendedRequestOptions fields (columns, filters, sort, preload, etc.)
+	// These are applied below in the normal query building process
+
 	// Apply ComputedQL fields if any
 	if len(options.ComputedQL) > 0 {
 		for colName, colExpr := range options.ComputedQL {
@@ -1647,16 +1651,9 @@ func (h *Handler) sendResponseWithOptions(w common.ResponseWriter, data interfac
 		data = h.normalizeResultArray(data)
 	}
 
-	response := data
-	if response == nil {
-		response = common.Response{
-			Success:  true,
-			Data:     data,
-			Metadata: metadata,
-		}
-	}
+	// Return data as-is without wrapping in common.Response
 	w.WriteHeader(http.StatusOK)
-	if err := w.WriteJSON(response); err != nil {
+	if err := w.WriteJSON(data); err != nil {
 		logger.Error("Failed to write JSON response: %v", err)
 	}
 }
