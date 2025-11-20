@@ -307,12 +307,14 @@ func (b *BunSelectQuery) Exists(ctx context.Context) (bool, error) {
 
 // BunInsertQuery implements InsertQuery for Bun
 type BunInsertQuery struct {
-	query  *bun.InsertQuery
-	values map[string]interface{}
+	query    *bun.InsertQuery
+	values   map[string]interface{}
+	hasModel bool
 }
 
 func (b *BunInsertQuery) Model(model interface{}) common.InsertQuery {
 	b.query = b.query.Model(model)
+	b.hasModel = true
 	return b
 }
 
@@ -342,10 +344,16 @@ func (b *BunInsertQuery) Returning(columns ...string) common.InsertQuery {
 }
 
 func (b *BunInsertQuery) Exec(ctx context.Context) (common.Result, error) {
-	if b.values != nil {
-		// Use Value() for INSERT queries to set column values
-		for k, v := range b.values {
-			b.query = b.query.Value(k, "?", v)
+	if b.values != nil && len(b.values) > 0 {
+		if !b.hasModel {
+			// If no model was set, use the values map as the model
+			// Bun can insert map[string]interface{} directly
+			b.query = b.query.Model(&b.values)
+		} else {
+			// If model was set, use Value() to add individual values
+			for k, v := range b.values {
+				b.query = b.query.Value(k, "?", v)
+			}
 		}
 	}
 	result, err := b.query.Exec(ctx)
