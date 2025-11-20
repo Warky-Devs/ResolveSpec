@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func tryParseDT(str string) (time.Time, error) {
@@ -670,4 +672,103 @@ func (n SqlJSONB) MarshalJSON() ([]byte, error) {
 	dat := n
 
 	return dat, nil
+}
+
+// SqlUUID - Nullable UUID String
+type SqlUUID sql.NullString
+
+// Scan -
+func (n *SqlUUID) Scan(value interface{}) error {
+	str := sql.NullString{String: "", Valid: false}
+	if value == nil {
+		*n = SqlUUID(str)
+		return nil
+	}
+	switch v := value.(type) {
+	case string:
+		uuid, err := uuid.Parse(v)
+		if err == nil {
+			str.String = uuid.String()
+			str.Valid = true
+			*n = SqlUUID(str)
+		}
+	case []uint8:
+		uuid, err := uuid.ParseBytes(v)
+		if err == nil {
+			str.String = uuid.String()
+			str.Valid = true
+			*n = SqlUUID(str)
+		}
+	default:
+		uuid, err := uuid.Parse(fmt.Sprintf("%v", v))
+		if err == nil {
+			str.String = uuid.String()
+			str.Valid = true
+			*n = SqlUUID(str)
+		}
+	}
+
+	return nil
+}
+
+// Value -
+func (n SqlUUID) Value() (driver.Value, error) {
+	if !n.Valid {
+		return nil, nil
+	}
+	return n.String, nil
+}
+
+// UnmarshalJSON - Override JSON
+func (n *SqlUUID) UnmarshalJSON(b []byte) error {
+
+	s := strings.Trim(strings.Trim(string(b), " "), "\"")
+	invalid := (s == "null" || s == "" || len(s) < 30)
+	if invalid {
+		s = ""
+		return nil
+	}
+	*n = SqlUUID(sql.NullString{String: s, Valid: !invalid})
+
+	return nil
+}
+
+// MarshalJSON - Override JSON format of time
+func (n SqlUUID) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return []byte(fmt.Sprintf("\"%s\"", n.String)), nil
+}
+
+// TryIfInt64 - Wrapper function to quickly try and cast text to int
+func TryIfInt64(v any, def int64) int64 {
+	str := ""
+	switch val := v.(type) {
+	case string:
+		str = val
+	case int:
+		return int64(val)
+	case int32:
+		return int64(val)
+	case int64:
+		return val
+	case uint32:
+		return int64(val)
+	case uint64:
+		return int64(val)
+	case float32:
+		return int64(val)
+	case float64:
+		return int64(val)
+	case []byte:
+		str = string(val)
+	default:
+		str = fmt.Sprintf("%d", def)
+	}
+	val, err := strconv.ParseInt(str, 10, 64)
+	if err != nil {
+		return def
+	}
+	return val
 }
