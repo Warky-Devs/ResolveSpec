@@ -260,9 +260,12 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		query = query.Table(tableName)
 	}
 
-	// Note: X-Files configuration is now applied via parseXFiles which populates
-	// ExtendedRequestOptions fields (columns, filters, sort, preload, etc.)
-	// These are applied below in the normal query building process
+	// If we have computed columns/expressions but options.Columns is empty,
+	// populate it with all model columns first since computed columns are additions
+	if len(options.Columns) == 0 && (len(options.ComputedQL) > 0 || len(options.ComputedColumns) > 0) {
+		logger.Debug("Populating options.Columns with all model columns since computed columns are additions")
+		options.Columns = reflection.GetModelColumns(model)
+	}
 
 	// Apply ComputedQL fields if any
 	if len(options.ComputedQL) > 0 {
