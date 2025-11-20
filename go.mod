@@ -8,7 +8,12 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/gorilla/mux v1.8.1
 	github.com/stretchr/testify v1.8.1
+	github.com/tidwall/gjson v1.18.0
+	github.com/tidwall/sjson v1.2.5
 	github.com/uptrace/bun v1.2.15
+	github.com/uptrace/bun/dialect/sqlitedialect v1.2.15
+	github.com/uptrace/bun/driver/sqliteshim v1.2.15
+	github.com/uptrace/bunrouter v1.0.23
 	go.uber.org/zap v1.27.0
 	gorm.io/gorm v1.25.12
 )
@@ -26,14 +31,9 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
-	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc // indirect
-	github.com/uptrace/bun/dialect/sqlitedialect v1.2.15 // indirect
-	github.com/uptrace/bun/driver/sqliteshim v1.2.15 // indirect
-	github.com/uptrace/bunrouter v1.0.23 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
