@@ -65,9 +65,6 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 	entity := params["entity"]
 	id := params["id"]
 
-	// Parse options from headers (now returns ExtendedRequestOptions)
-	options := h.parseOptionsFromHeaders(r)
-
 	// Determine operation based on HTTP method
 	method := r.Method()
 
@@ -104,12 +101,15 @@ func (h *Handler) Handle(w common.ResponseWriter, r common.Request, params map[s
 	modelPtr := reflect.New(reflect.TypeOf(model)).Interface()
 	tableName := h.getTableName(schema, entity, model)
 
-	// Add request-scoped data to context
-	ctx = WithRequestData(ctx, schema, entity, tableName, model, modelPtr)
+	// Parse options from headers - this now includes relation name resolution
+	options := h.parseOptionsFromHeaders(r, model)
 
 	// Validate and filter columns in options (log warnings for invalid columns)
 	validator := common.NewColumnValidator(model)
 	options = filterExtendedOptions(validator, options)
+
+	// Add request-scoped data to context (including options)
+	ctx = WithRequestData(ctx, schema, entity, tableName, model, modelPtr, options)
 
 	switch method {
 	case "GET":

@@ -13,6 +13,7 @@ const (
 	contextKeyTableName contextKey = "tableName"
 	contextKeyModel     contextKey = "model"
 	contextKeyModelPtr  contextKey = "modelPtr"
+	contextKeyOptions   contextKey = "options"
 )
 
 // WithSchema adds schema to context
@@ -74,12 +75,28 @@ func GetModelPtr(ctx context.Context) interface{} {
 	return ctx.Value(contextKeyModelPtr)
 }
 
+// WithOptions adds request options to context
+func WithOptions(ctx context.Context, options ExtendedRequestOptions) context.Context {
+	return context.WithValue(ctx, contextKeyOptions, options)
+}
+
+// GetOptions retrieves request options from context
+func GetOptions(ctx context.Context) *ExtendedRequestOptions {
+	if v := ctx.Value(contextKeyOptions); v != nil {
+		if opts, ok := v.(ExtendedRequestOptions); ok {
+			return &opts
+		}
+	}
+	return nil
+}
+
 // WithRequestData adds all request-scoped data to context at once
-func WithRequestData(ctx context.Context, schema, entity, tableName string, model, modelPtr interface{}) context.Context {
+func WithRequestData(ctx context.Context, schema, entity, tableName string, model, modelPtr interface{}, options ExtendedRequestOptions) context.Context {
 	ctx = WithSchema(ctx, schema)
 	ctx = WithEntity(ctx, entity)
 	ctx = WithTableName(ctx, tableName)
 	ctx = WithModel(ctx, model)
 	ctx = WithModelPtr(ctx, modelPtr)
+	ctx = WithOptions(ctx, options)
 	return ctx
 }
