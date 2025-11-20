@@ -480,11 +480,31 @@ func (h *Handler) parseCommaSeparated(value string) []string {
 	return result
 }
 
+// extractSourceColumn extracts the base column name from PostgreSQL JSON operators
+// Examples:
+//   - "columna->>'val'" returns "columna"
+//   - "columna->'key'" returns "columna"
+//   - "columna" returns "columna"
+//   - "table.columna->>'val'" returns "table.columna"
+func extractSourceColumn(colName string) string {
+	// Check for PostgreSQL JSON operators: -> and ->>
+	if idx := strings.Index(colName, "->>"); idx != -1 {
+		return strings.TrimSpace(colName[:idx])
+	}
+	if idx := strings.Index(colName, "->"); idx != -1 {
+		return strings.TrimSpace(colName[:idx])
+	}
+	return colName
+}
+
 // getColumnTypeFromModel uses reflection to determine the Go type of a column in a model
 func (h *Handler) getColumnTypeFromModel(model interface{}, colName string) reflect.Kind {
 	if model == nil {
 		return reflect.Invalid
 	}
+
+	// Extract the source column name (remove JSON operators like ->> or ->)
+	sourceColName := extractSourceColumn(colName)
 
 	modelType := reflect.TypeOf(model)
 	// Dereference pointer if needed
@@ -506,19 +526,19 @@ func (h *Handler) getColumnTypeFromModel(model interface{}, colName string) refl
 		if jsonTag != "" {
 			// Parse JSON tag (format: "name,omitempty")
 			parts := strings.Split(jsonTag, ",")
-			if parts[0] == colName {
+			if parts[0] == sourceColName {
 				return field.Type.Kind()
 			}
 		}
 
 		// Check field name (case-insensitive)
-		if strings.EqualFold(field.Name, colName) {
+		if strings.EqualFold(field.Name, sourceColName) {
 			return field.Type.Kind()
 		}
 
 		// Check snake_case conversion
 		snakeCaseName := toSnakeCase(field.Name)
-		if snakeCaseName == colName {
+		if snakeCaseName == sourceColName {
 			return field.Type.Kind()
 		}
 	}

@@ -1647,10 +1647,13 @@ func (h *Handler) sendResponseWithOptions(w common.ResponseWriter, data interfac
 		data = h.normalizeResultArray(data)
 	}
 
-	response := common.Response{
-		Success:  true,
-		Data:     data,
-		Metadata: metadata,
+	response := data
+	if response == nil {
+		response = common.Response{
+			Success:  true,
+			Data:     data,
+			Metadata: metadata,
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 	if err := w.WriteJSON(response); err != nil {
