@@ -369,13 +369,20 @@ func (g *GormUpdateQuery) Set(column string, value interface{}) common.UpdateQue
 }
 
 func (g *GormUpdateQuery) SetMap(values map[string]interface{}) common.UpdateQuery {
+
 	// Filter out read-only columns if model is set
 	if g.model != nil {
+		pkName := reflection.GetPrimaryKeyName(g.model)
 		filteredValues := make(map[string]interface{})
 		for column, value := range values {
+			if pkName != "" && column == pkName {
+				// Skip primary key updates
+				continue
+			}
 			if reflection.IsColumnWritable(g.model, column) {
 				filteredValues[column] = value
 			}
+
 		}
 		g.updates = filteredValues
 	} else {

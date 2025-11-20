@@ -807,12 +807,14 @@ func (h *Handler) handleUpdate(ctx context.Context, w common.ResponseWriter, id 
 			nestedRelations = relations
 		}
 
+		// Get the primary key name for the model
+		pkName := reflection.GetPrimaryKeyName(model)
+
 		// Ensure ID is in the data map for the update
-		dataMap["id"] = targetID
+		dataMap[pkName] = targetID
 
 		// Create update query
 		query := tx.NewUpdate().Table(tableName).SetMap(dataMap)
-		pkName := reflection.GetPrimaryKeyName(model)
 		query = query.Where(fmt.Sprintf("%s = ?", common.QuoteIdent(pkName)), targetID)
 
 		// Execute BeforeScan hooks - pass query chain so hooks can modify it
@@ -936,6 +938,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 			// Array of IDs or objects with ID field
 			logger.Info("Batch delete with %d items ([]interface{})", len(v))
 			deletedCount := 0
+			pkName := reflection.GetPrimaryKeyName(model)
 			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 				for _, item := range v {
 					var itemID interface{}
@@ -945,7 +948,7 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 					case string:
 						itemID = v
 					case map[string]interface{}:
-						itemID = v["id"]
+						itemID = v[pkName]
 					default:
 						itemID = item
 					}
@@ -1002,9 +1005,10 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 			// Array of objects with id field
 			logger.Info("Batch delete with %d items ([]map[string]interface{})", len(v))
 			deletedCount := 0
+			pkName := reflection.GetPrimaryKeyName(model)
 			err := h.db.RunInTransaction(ctx, func(tx common.Database) error {
 				for _, item := range v {
-					if itemID, ok := item["id"]; ok && itemID != nil {
+					if itemID, ok := item[pkName]; ok && itemID != nil {
 						itemIDStr := fmt.Sprintf("%v", itemID)
 
 						// Execute hooks for each item
@@ -1052,7 +1056,8 @@ func (h *Handler) handleDelete(ctx context.Context, w common.ResponseWriter, id 
 
 		case map[string]interface{}:
 			// Single object with id field
-			if itemID, ok := v["id"]; ok && itemID != nil {
+			pkName := reflection.GetPrimaryKeyName(model)
+			if itemID, ok := v[pkName]; ok && itemID != nil {
 				id = fmt.Sprintf("%v", itemID)
 			}
 		}

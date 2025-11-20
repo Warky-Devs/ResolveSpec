@@ -388,10 +388,15 @@ func (b *BunUpdateQuery) Set(column string, value interface{}) common.UpdateQuer
 }
 
 func (b *BunUpdateQuery) SetMap(values map[string]interface{}) common.UpdateQuery {
+	pkName := reflection.GetPrimaryKeyName(b.model)
 	for column, value := range values {
 		// Validate column is writable if model is set
 		if b.model != nil && !reflection.IsColumnWritable(b.model, column) {
 			// Skip scan-only columns
+			continue
+		}
+		if pkName != "" && column == pkName {
+			// Skip primary key updates
 			continue
 		}
 		b.query = b.query.Set(column+" = ?", value)

@@ -111,6 +111,9 @@ func (p *NestedCUDProcessor) ProcessNestedCUD(
 	// Inject parent IDs for foreign key resolution
 	p.injectForeignKeys(regularData, modelType, parentIDs)
 
+	// Get the primary key name for this model
+	pkName := reflection.GetPrimaryKeyName(model)
+
 	// Process based on operation
 	switch strings.ToLower(operation) {
 	case "insert", "create":
@@ -128,30 +131,30 @@ func (p *NestedCUDProcessor) ProcessNestedCUD(
 		}
 
 	case "update":
-		rows, err := p.processUpdate(ctx, regularData, tableName, data["id"])
+		rows, err := p.processUpdate(ctx, regularData, tableName, data[pkName])
 		if err != nil {
 			return nil, fmt.Errorf("update failed: %w", err)
 		}
-		result.ID = data["id"]
+		result.ID = data[pkName]
 		result.AffectedRows = rows
 		result.Data = regularData
 
 		// Process child relations for update
-		if err := p.processChildRelations(ctx, "update", data["id"], relationFields, result.RelationData, modelType); err != nil {
+		if err := p.processChildRelations(ctx, "update", data[pkName], relationFields, result.RelationData, modelType); err != nil {
 			return nil, fmt.Errorf("failed to process child relations: %w", err)
 		}
 
 	case "delete":
 		// Process child relations first (for referential integrity)
-		if err := p.processChildRelations(ctx, "delete", data["id"], relationFields, result.RelationData, modelType); err != nil {
+		if err := p.processChildRelations(ctx, "delete", data[pkName], relationFields, result.RelationData, modelType); err != nil {
 			return nil, fmt.Errorf("failed to process child relations before delete: %w", err)
 		}
 
-		rows, err := p.processDelete(ctx, tableName, data["id"])
+		rows, err := p.processDelete(ctx, tableName, data[pkName])
 		if err != nil {
 			return nil, fmt.Errorf("delete failed: %w", err)
 		}
-		result.ID = data["id"]
+		result.ID = data[pkName]
 		result.AffectedRows = rows
 		result.Data = regularData
 
