@@ -319,6 +319,10 @@ func (b *BunInsertQuery) Model(model interface{}) common.InsertQuery {
 }
 
 func (b *BunInsertQuery) Table(table string) common.InsertQuery {
+	if b.hasModel {
+		// If model is set, do not override table name
+		return b
+	}
 	b.query = b.query.Table(table)
 	return b
 }

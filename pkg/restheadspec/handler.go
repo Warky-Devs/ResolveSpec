@@ -663,7 +663,14 @@ func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, dat
 			}
 
 			// Create insert query
-			query := tx.NewInsert().Model(modelValue).Table(tableName).Returning("*")
+			query := tx.NewInsert().Model(modelValue)
+
+			// Only set Table() if the model doesn't provide a table name via TableNameProvider
+			if provider, ok := modelValue.(common.TableNameProvider); !ok || provider.TableName() == "" {
+				query = query.Table(tableName)
+			}
+
+			query = query.Returning("*")
 
 			// Execute BeforeScan hooks - pass query chain so hooks can modify it
 			itemHookCtx := &HookContext{
