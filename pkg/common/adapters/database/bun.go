@@ -46,8 +46,8 @@ func (b *BunAdapter) NewDelete() common.DeleteQuery {
 
 func (b *BunAdapter) Exec(ctx context.Context, query string, args ...interface{}) (res common.Result, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("BunAdapter.Exec"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("BunAdapter.Exec", r)
 		}
 	}()
 	result, err := b.db.ExecContext(ctx, query, args...)
@@ -56,8 +56,8 @@ func (b *BunAdapter) Exec(ctx context.Context, query string, args ...interface{}
 
 func (b *BunAdapter) Query(ctx context.Context, dest interface{}, query string, args ...interface{}) (err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("BunAdapter.Query"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("BunAdapter.Query", r)
 		}
 	}()
 	return b.db.NewRaw(query, args...).Scan(ctx, dest)
@@ -86,8 +86,8 @@ func (b *BunAdapter) RollbackTx(ctx context.Context) error {
 
 func (b *BunAdapter) RunInTransaction(ctx context.Context, fn func(common.Database) error) (err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("BunAdapter.RunInTransaction"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("BunAdapter.RunInTransaction", r)
 		}
 	}()
 	return b.db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
@@ -235,6 +235,11 @@ func (b *BunSelectQuery) Preload(relation string, conditions ...interface{}) com
 
 func (b *BunSelectQuery) PreloadRelation(relation string, apply ...func(common.SelectQuery) common.SelectQuery) common.SelectQuery {
 	b.query = b.query.Relation(relation, func(sq *bun.SelectQuery) *bun.SelectQuery {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.HandlePanic("BunSelectQuery.PreloadRelation", r)
+			}
+		}()
 		if len(apply) == 0 {
 			return sq
 		}
@@ -294,8 +299,8 @@ func (b *BunSelectQuery) Having(having string, args ...interface{}) common.Selec
 
 func (b *BunSelectQuery) Scan(ctx context.Context, dest interface{}) (err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("BunSelectQuery.Scan"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("BunSelectQuery.Scan", r)
 		}
 	}()
 	if dest == nil {
@@ -306,8 +311,8 @@ func (b *BunSelectQuery) Scan(ctx context.Context, dest interface{}) (err error)
 
 func (b *BunSelectQuery) ScanModel(ctx context.Context) (err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("BunSelectQuery.ScanModel"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("BunSelectQuery.ScanModel", r)
 		}
 	}()
 	if b.query.GetModel() == nil {
@@ -319,8 +324,8 @@ func (b *BunSelectQuery) ScanModel(ctx context.Context) (err error) {
 
 func (b *BunSelectQuery) Count(ctx context.Context) (count int, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("BunSelectQuery.Count"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("BunSelectQuery.Count", r)
 			count = 0
 		}
 	}()
@@ -341,8 +346,8 @@ func (b *BunSelectQuery) Count(ctx context.Context) (count int, err error) {
 
 func (b *BunSelectQuery) Exists(ctx context.Context) (exists bool, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("BunSelectQuery.Exists"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("BunSelectQuery.Exists", r)
 			exists = false
 		}
 	}()
@@ -392,8 +397,8 @@ func (b *BunInsertQuery) Returning(columns ...string) common.InsertQuery {
 
 func (b *BunInsertQuery) Exec(ctx context.Context) (res common.Result, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("BunInsertQuery.Exec"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("BunInsertQuery.Exec", r)
 		}
 	}()
 	if b.values != nil && len(b.values) > 0 {
@@ -478,8 +483,8 @@ func (b *BunUpdateQuery) Returning(columns ...string) common.UpdateQuery {
 
 func (b *BunUpdateQuery) Exec(ctx context.Context) (res common.Result, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("BunUpdateQuery.Exec"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("BunUpdateQuery.Exec", r)
 		}
 	}()
 	result, err := b.query.Exec(ctx)
@@ -508,8 +513,8 @@ func (b *BunDeleteQuery) Where(query string, args ...interface{}) common.DeleteQ
 
 func (b *BunDeleteQuery) Exec(ctx context.Context) (res common.Result, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("BunDeleteQuery.Exec"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("BunDeleteQuery.Exec", r)
 		}
 	}()
 	result, err := b.query.Exec(ctx)

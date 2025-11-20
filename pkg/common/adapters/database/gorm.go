@@ -41,8 +41,8 @@ func (g *GormAdapter) NewDelete() common.DeleteQuery {
 
 func (g *GormAdapter) Exec(ctx context.Context, query string, args ...interface{}) (res common.Result, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("GormAdapter.Exec"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("GormAdapter.Exec", r)
 		}
 	}()
 	result := g.db.WithContext(ctx).Exec(query, args...)
@@ -51,8 +51,8 @@ func (g *GormAdapter) Exec(ctx context.Context, query string, args ...interface{
 
 func (g *GormAdapter) Query(ctx context.Context, dest interface{}, query string, args ...interface{}) (err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("GormAdapter.Query"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("GormAdapter.Query", r)
 		}
 	}()
 	return g.db.WithContext(ctx).Raw(query, args...).Find(dest).Error
@@ -76,8 +76,8 @@ func (g *GormAdapter) RollbackTx(ctx context.Context) error {
 
 func (g *GormAdapter) RunInTransaction(ctx context.Context, fn func(common.Database) error) (err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("GormAdapter.RunInTransaction"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("GormAdapter.RunInTransaction", r)
 		}
 	}()
 	return g.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -273,8 +273,8 @@ func (g *GormSelectQuery) Having(having string, args ...interface{}) common.Sele
 
 func (g *GormSelectQuery) Scan(ctx context.Context, dest interface{}) (err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("GormSelectQuery.Scan"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("GormSelectQuery.Scan", r)
 		}
 	}()
 	return g.db.WithContext(ctx).Find(dest).Error
@@ -282,8 +282,8 @@ func (g *GormSelectQuery) Scan(ctx context.Context, dest interface{}) (err error
 
 func (g *GormSelectQuery) ScanModel(ctx context.Context) (err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("GormSelectQuery.ScanModel"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("GormSelectQuery.ScanModel", r)
 		}
 	}()
 	if g.db.Statement.Model == nil {
@@ -294,8 +294,8 @@ func (g *GormSelectQuery) ScanModel(ctx context.Context) (err error) {
 
 func (g *GormSelectQuery) Count(ctx context.Context) (count int, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("GormSelectQuery.Count"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("GormSelectQuery.Count", r)
 			count = 0
 		}
 	}()
@@ -306,8 +306,8 @@ func (g *GormSelectQuery) Count(ctx context.Context) (count int, err error) {
 
 func (g *GormSelectQuery) Exists(ctx context.Context) (exists bool, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("GormSelectQuery.Exists"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("GormSelectQuery.Exists", r)
 			exists = false
 		}
 	}()
@@ -354,8 +354,8 @@ func (g *GormInsertQuery) Returning(columns ...string) common.InsertQuery {
 
 func (g *GormInsertQuery) Exec(ctx context.Context) (res common.Result, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("GormInsertQuery.Exec"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("GormInsertQuery.Exec", r)
 		}
 	}()
 	var result *gorm.DB
@@ -446,8 +446,8 @@ func (g *GormUpdateQuery) Returning(columns ...string) common.UpdateQuery {
 
 func (g *GormUpdateQuery) Exec(ctx context.Context) (res common.Result, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("GormUpdateQuery.Exec"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("GormUpdateQuery.Exec", r)
 		}
 	}()
 	result := g.db.WithContext(ctx).Updates(g.updates)
@@ -478,8 +478,8 @@ func (g *GormDeleteQuery) Where(query string, args ...interface{}) common.Delete
 
 func (g *GormDeleteQuery) Exec(ctx context.Context) (res common.Result, err error) {
 	defer func() {
-		if panicErr := logger.RecoverPanic("GormDeleteQuery.Exec"); panicErr != nil {
-			err = panicErr
+		if r := recover(); r != nil {
+			err = logger.HandlePanic("GormDeleteQuery.Exec", r)
 		}
 	}()
 	result := g.db.WithContext(ctx).Delete(g.model)

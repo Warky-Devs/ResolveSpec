@@ -200,6 +200,69 @@ func (h *Handler) HandleGet(w common.ResponseWriter, r common.Request, params ma
 
 // parseOptionsFromHeaders is now implemented in headers.go
 
+// validateAndFixPreloadWhere validates that the WHERE clause for a preload contains
+// the relation prefix (alias). If not present, it attempts to add it to column references.
+// Returns the fixed WHERE clause and an error if it cannot be safely fixed.
+func (h *Handler) validateAndFixPreloadWhere(where string, relationName string) (string, error) {
+	if where == "" {
+		return where, nil
+	}
+
+	// Check if the relation name is already present in the WHERE clause
+	lowerWhere := strings.ToLower(where)
+	lowerRelation := strings.ToLower(relationName)
+
+	// Check for patterns like "relation.", "relation ", or just "relation" followed by a dot
+	if strings.Contains(lowerWhere, lowerRelation+".") ||
+	   strings.Contains(lowerWhere, "`"+lowerRelation+"`.") ||
+	   strings.Contains(lowerWhere, "\""+lowerRelation+"\".") {
+		// Relation prefix is already present
+		return where, nil
+	}
+
+	// If the WHERE clause is complex (contains OR, parentheses, subqueries, etc.),
+	// we can't safely auto-fix it - require explicit prefix
+	if strings.Contains(lowerWhere, " or ") ||
+	   strings.Contains(where, "(") ||
+	   strings.Contains(where, ")") {
+		return "", fmt.Errorf("preload WHERE condition must reference the relation '%s' (e.g., '%s.column_name'). Complex WHERE clauses with OR/parentheses must explicitly use the relation prefix", relationName, relationName)
+	}
+
+	// Try to add the relation prefix to simple column references
+	// This handles basic cases like "column = value" or "column = value AND other_column = value"
+	// Split by AND to handle multiple conditions (case-insensitive)
+	originalConditions := strings.Split(where, " AND ")
+
+	// If uppercase split didn't work, try lowercase
+	if len(originalConditions) == 1 {
+		originalConditions = strings.Split(where, " and ")
+	}
+
+	fixedConditions := make([]string, 0, len(originalConditions))
+
+	for _, cond := range originalConditions {
+		cond = strings.TrimSpace(cond)
+		if cond == "" {
+			continue
+		}
+
+		// Check if this condition already has a table prefix (contains a dot)
+		if strings.Contains(cond, ".") {
+			fixedConditions = append(fixedConditions, cond)
+			continue
+		}
+
+		// Add relation prefix to the column name
+		// This prefixes the entire condition with "relationName."
+		fixedCond := fmt.Sprintf("%s.%s", relationName, cond)
+		fixedConditions = append(fixedConditions, fixedCond)
+	}
+
+	fixedWhere := strings.Join(fixedConditions, " AND ")
+	logger.Debug("Auto-fixed preload WHERE clause: '%s' -> '%s'", where, fixedWhere)
+	return fixedWhere, nil
+}
+
 func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id string, options ExtendedRequestOptions) {
 	// Capture panics and return error response
 	defer func() {
@@ -344,6 +407,19 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	for idx := range options.Preload {
 		preload := options.Preload[idx]
 		logger.Debug("Applying preload: %s", preload.Relation)
+
+		// Validate and fix WHERE clause to ensure it contains the relation prefix
+		if len(preload.Where) > 0 {
+			fixedWhere, err := h.validateAndFixPreloadWhere(preload.Where, preload.Relation)
+			if err != nil {
+				logger.Error("Invalid preload WHERE clause for relation '%s': %v", preload.Relation, err)
+				h.sendError(w, http.StatusBadRequest, "invalid_preload_where",
+					fmt.Sprintf("Invalid preload WHERE clause for relation '%s'", preload.Relation), err)
+				return
+			}
+			preload.Where = fixedWhere
+		}
+
 		query = query.PreloadRelation(preload.Relation, func(sq common.SelectQuery) common.SelectQuery {
 			if len(preload.OmitColumns) > 0 {
 				allCols := reflection.GetModelColumns(model)
