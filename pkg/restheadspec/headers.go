@@ -792,7 +792,7 @@ func (h *Handler) resolveRelationName(model interface{}, nameOrTable string) str
 		field := modelType.Field(i)
 		if field.Name == nameOrTable {
 			// It's already a field name
-			logger.Debug("Input '%s' is a field name", nameOrTable)
+			// logger.Debug("Input '%s' is a field name", nameOrTable)
 			return nameOrTable
 		}
 	}
