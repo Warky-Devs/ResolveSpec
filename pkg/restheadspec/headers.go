@@ -162,9 +162,17 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request, model interface{}) E
 		case strings.HasPrefix(key, "x-searchcols"):
 			options.SearchColumns = h.parseCommaSeparated(decodedValue)
 		case strings.HasPrefix(key, "x-custom-sql-w"):
-			options.CustomSQLWhere = decodedValue
+			if options.CustomSQLWhere != "" {
+				options.CustomSQLWhere = fmt.Sprintf("%s AND (%s)", options.CustomSQLWhere, decodedValue)
+			} else {
+				options.CustomSQLWhere = decodedValue
+			}
 		case strings.HasPrefix(key, "x-custom-sql-or"):
-			options.CustomSQLOr = decodedValue
+			if options.CustomSQLOr != "" {
+				options.CustomSQLOr = fmt.Sprintf("%s OR (%s)", options.CustomSQLOr, decodedValue)
+			} else {
+				options.CustomSQLOr = decodedValue
+			}
 
 		// Joins & Relations
 		case strings.HasPrefix(key, "x-preload"):
@@ -226,6 +234,7 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request, model interface{}) E
 		case strings.HasPrefix(key, "x-cql-sel-"):
 			colName := strings.TrimPrefix(key, "x-cql-sel-")
 			options.ComputedQL[colName] = decodedValue
+
 		case strings.HasPrefix(key, "x-distinct"):
 			options.Distinct = strings.EqualFold(decodedValue, "true")
 		case strings.HasPrefix(key, "x-skipcount"):
