@@ -652,6 +652,7 @@ func (h *Handler) applyPreloadWithRecursion(query common.SelectQuery, preload co
 				sq = sq.Order(fmt.Sprintf("%s %s", sort.Column, sort.Direction))
 			}
 		}
+		
 
 		// Apply WHERE clause
 		if len(preload.Where) > 0 {
