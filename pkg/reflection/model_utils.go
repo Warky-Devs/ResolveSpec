@@ -1,7 +1,9 @@
 package reflection
 
 import (
+	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/bitechdev/ResolveSpec/pkg/modelregistry"
@@ -132,7 +134,7 @@ func findFieldByName(val reflect.Value, name string) any {
 		}
 
 		// Check if field name matches
-		if strings.ToLower(field.Name) == name && fieldValue.CanInterface() {
+		if strings.EqualFold(field.Name, name) && fieldValue.CanInterface() {
 			return fieldValue.Interface()
 		}
 	}
@@ -409,8 +411,8 @@ func collectSQLColumnsFromType(typ reflect.Type, columns *[]string, scanOnlyEmbe
 		if bunTag != "" {
 			// Skip if it's a bun relation (rel:, join:, or m2m:)
 			if strings.Contains(bunTag, "rel:") ||
-			   strings.Contains(bunTag, "join:") ||
-			   strings.Contains(bunTag, "m2m:") {
+				strings.Contains(bunTag, "join:") ||
+				strings.Contains(bunTag, "m2m:") {
 				continue
 			}
 		}
@@ -419,9 +421,9 @@ func collectSQLColumnsFromType(typ reflect.Type, columns *[]string, scanOnlyEmbe
 		if gormTag != "" {
 			// Skip if it has gorm relationship tags
 			if strings.Contains(gormTag, "foreignKey:") ||
-			   strings.Contains(gormTag, "references:") ||
-			   strings.Contains(gormTag, "many2many:") ||
-			   strings.Contains(gormTag, "constraint:") {
+				strings.Contains(gormTag, "references:") ||
+				strings.Contains(gormTag, "many2many:") ||
+				strings.Contains(gormTag, "constraint:") {
 				continue
 			}
 		}
@@ -472,7 +474,7 @@ func IsColumnWritable(model any, columnName string) bool {
 
 // isColumnWritableInType recursively searches for a column and checks if it's writable
 // Returns (found, writable) where found indicates if the column was found
-func isColumnWritableInType(typ reflect.Type, columnName string) (bool, bool) {
+func isColumnWritableInType(typ reflect.Type, columnName string) (found bool, writable bool) {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 
@@ -560,4 +562,291 @@ func isGormFieldReadOnly(tag string) bool {
 		}
 	}
 	return false
+}
+
+// ExtractSourceColumn extracts the base column name from PostgreSQL JSON operators
+// Examples:
+//   - "columna->>'val'" returns "columna"
+//   - "columna->'key'" returns "columna"
+//   - "columna" returns "columna"
+//   - "table.columna->>'val'" returns "table.columna"
+func ExtractSourceColumn(colName string) string {
+	// Check for PostgreSQL JSON operators: -> and ->>
+	if idx := strings.Index(colName, "->>"); idx != -1 {
+		return strings.TrimSpace(colName[:idx])
+	}
+	if idx := strings.Index(colName, "->"); idx != -1 {
+		return strings.TrimSpace(colName[:idx])
+	}
+	return colName
+}
+
+// ToSnakeCase converts a string from CamelCase to snake_case
+func ToSnakeCase(s string) string {
+	var result strings.Builder
+	for i, r := range s {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			result.WriteRune('_')
+		}
+		result.WriteRune(r)
+	}
+	return strings.ToLower(result.String())
+}
+
+// GetColumnTypeFromModel uses reflection to determine the Go type of a column in a model
+func GetColumnTypeFromModel(model interface{}, colName string) reflect.Kind {
+	if model == nil {
+		return reflect.Invalid
+	}
+
+	// Extract the source column name (remove JSON operators like ->> or ->)
+	sourceColName := ExtractSourceColumn(colName)
+
+	modelType := reflect.TypeOf(model)
+	// Dereference pointer if needed
+	if modelType.Kind() == reflect.Ptr {
+		modelType = modelType.Elem()
+	}
+
+	// Ensure it's a struct
+	if modelType.Kind() != reflect.Struct {
+		return reflect.Invalid
+	}
+
+	// Find the field by JSON tag or field name
+	for i := 0; i < modelType.NumField(); i++ {
+		field := modelType.Field(i)
+
+		// Check JSON tag
+		jsonTag := field.Tag.Get("json")
+		if jsonTag != "" {
+			// Parse JSON tag (format: "name,omitempty")
+			parts := strings.Split(jsonTag, ",")
+			if parts[0] == sourceColName {
+				return field.Type.Kind()
+			}
+		}
+
+		// Check field name (case-insensitive)
+		if strings.EqualFold(field.Name, sourceColName) {
+			return field.Type.Kind()
+		}
+
+		// Check snake_case conversion
+		snakeCaseName := ToSnakeCase(field.Name)
+		if snakeCaseName == sourceColName {
+			return field.Type.Kind()
+		}
+	}
+
+	return reflect.Invalid
+}
+
+// IsNumericType checks if a reflect.Kind is a numeric type
+func IsNumericType(kind reflect.Kind) bool {
+	return kind == reflect.Int || kind == reflect.Int8 || kind == reflect.Int16 ||
+		kind == reflect.Int32 || kind == reflect.Int64 || kind == reflect.Uint ||
+		kind == reflect.Uint8 || kind == reflect.Uint16 || kind == reflect.Uint32 ||
+		kind == reflect.Uint64 || kind == reflect.Float32 || kind == reflect.Float64
+}
+
+// IsStringType checks if a reflect.Kind is a string type
+func IsStringType(kind reflect.Kind) bool {
+	return kind == reflect.String
+}
+
+// IsNumericValue checks if a string value can be parsed as a number
+func IsNumericValue(value string) bool {
+	value = strings.TrimSpace(value)
+	_, err := strconv.ParseFloat(value, 64)
+	return err == nil
+}
+
+// ConvertToNumericType converts a string value to the appropriate numeric type
+func ConvertToNumericType(value string, kind reflect.Kind) (interface{}, error) {
+	value = strings.TrimSpace(value)
+
+	switch kind {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		// Parse as integer
+		bitSize := 64
+		switch kind {
+		case reflect.Int8:
+			bitSize = 8
+		case reflect.Int16:
+			bitSize = 16
+		case reflect.Int32:
+			bitSize = 32
+		}
+
+		intVal, err := strconv.ParseInt(value, 10, bitSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer value: %w", err)
+		}
+
+		// Return the appropriate type
+		switch kind {
+		case reflect.Int:
+			return int(intVal), nil
+		case reflect.Int8:
+			return int8(intVal), nil
+		case reflect.Int16:
+			return int16(intVal), nil
+		case reflect.Int32:
+			return int32(intVal), nil
+		case reflect.Int64:
+			return intVal, nil
+		}
+
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		// Parse as unsigned integer
+		bitSize := 64
+		switch kind {
+		case reflect.Uint8:
+			bitSize = 8
+		case reflect.Uint16:
+			bitSize = 16
+		case reflect.Uint32:
+			bitSize = 32
+		}
+
+		uintVal, err := strconv.ParseUint(value, 10, bitSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid unsigned integer value: %w", err)
+		}
+
+		// Return the appropriate type
+		switch kind {
+		case reflect.Uint:
+			return uint(uintVal), nil
+		case reflect.Uint8:
+			return uint8(uintVal), nil
+		case reflect.Uint16:
+			return uint16(uintVal), nil
+		case reflect.Uint32:
+			return uint32(uintVal), nil
+		case reflect.Uint64:
+			return uintVal, nil
+		}
+
+	case reflect.Float32, reflect.Float64:
+		// Parse as float
+		bitSize := 64
+		if kind == reflect.Float32 {
+			bitSize = 32
+		}
+
+		floatVal, err := strconv.ParseFloat(value, bitSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid float value: %w", err)
+		}
+
+		if kind == reflect.Float32 {
+			return float32(floatVal), nil
+		}
+		return floatVal, nil
+	}
+
+	return nil, fmt.Errorf("unsupported numeric type: %v", kind)
+}
+
+// GetRelationModel gets the model type for a relation field
+// It searches for the field by name in the following order (case-insensitive):
+// 1. Actual field name
+// 2. Bun tag name (if exists)
+// 3. Gorm tag name (if exists)
+// 4. JSON tag name (if exists)
+func GetRelationModel(model interface{}, fieldName string) interface{} {
+	if model == nil || fieldName == "" {
+		return nil
+	}
+
+	modelType := reflect.TypeOf(model)
+	if modelType == nil {
+		return nil
+	}
+
+	if modelType.Kind() == reflect.Ptr {
+		modelType = modelType.Elem()
+	}
+
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		return nil
+	}
+
+	// Find the field by checking in priority order (case-insensitive)
+	var field *reflect.StructField
+	normalizedFieldName := strings.ToLower(fieldName)
+
+	for i := 0; i < modelType.NumField(); i++ {
+		f := modelType.Field(i)
+
+		// 1. Check actual field name (case-insensitive)
+		if strings.EqualFold(f.Name, fieldName) {
+			field = &f
+			break
+		}
+
+		// 2. Check bun tag name
+		bunTag := f.Tag.Get("bun")
+		if bunTag != "" {
+			bunColName := ExtractColumnFromBunTag(bunTag)
+			if bunColName != "" && strings.EqualFold(bunColName, normalizedFieldName) {
+				field = &f
+				break
+			}
+		}
+
+		// 3. Check gorm tag name
+		gormTag := f.Tag.Get("gorm")
+		if gormTag != "" {
+			gormColName := ExtractColumnFromGormTag(gormTag)
+			if gormColName != "" && strings.EqualFold(gormColName, normalizedFieldName) {
+				field = &f
+				break
+			}
+		}
+
+		// 4. Check JSON tag name
+		jsonTag := f.Tag.Get("json")
+		if jsonTag != "" {
+			parts := strings.Split(jsonTag, ",")
+			if len(parts) > 0 && parts[0] != "" && parts[0] != "-" {
+				if strings.EqualFold(parts[0], normalizedFieldName) {
+					field = &f
+					break
+				}
+			}
+		}
+	}
+
+	if field == nil {
+		return nil
+	}
+
+	// Get the target type
+	targetType := field.Type
+	if targetType == nil {
+		return nil
+	}
+
+	if targetType.Kind() == reflect.Slice {
+		targetType = targetType.Elem()
+		if targetType == nil {
+			return nil
+		}
+	}
+	if targetType.Kind() == reflect.Ptr {
+		targetType = targetType.Elem()
+		if targetType == nil {
+			return nil
+		}
+	}
+
+	if targetType.Kind() != reflect.Struct {
+		return nil
+	}
+
+	// Create a zero value of the target type
+	return reflect.New(targetType).Elem().Interface()
 }

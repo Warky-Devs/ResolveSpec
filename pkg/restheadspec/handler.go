@@ -391,13 +391,21 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	// Apply custom SQL WHERE clause (AND condition)
 	if options.CustomSQLWhere != "" {
 		logger.Debug("Applying custom SQL WHERE: %s", options.CustomSQLWhere)
-		query = query.Where(options.CustomSQLWhere)
+		// Sanitize without auto-prefixing since custom SQL may reference multiple tables
+		sanitizedWhere := common.SanitizeWhereClause(options.CustomSQLWhere, "")
+		if sanitizedWhere != "" {
+			query = query.Where(sanitizedWhere)
+		}
 	}
 
 	// Apply custom SQL WHERE clause (OR condition)
 	if options.CustomSQLOr != "" {
 		logger.Debug("Applying custom SQL OR: %s", options.CustomSQLOr)
-		query = query.WhereOr(options.CustomSQLOr)
+		// Sanitize without auto-prefixing since custom SQL may reference multiple tables
+		sanitizedOr := common.SanitizeWhereClause(options.CustomSQLOr, "")
+		if sanitizedOr != "" {
+			query = query.WhereOr(sanitizedOr)
+		}
 	}
 
 	// If ID is provided, filter by ID
@@ -473,7 +481,10 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		// Apply cursor filter to query
 		if cursorFilter != "" {
 			logger.Debug("Applying cursor filter: %s", cursorFilter)
-			query = query.Where(cursorFilter)
+			sanitizedCursor := common.SanitizeWhereClause(cursorFilter, "")
+			if sanitizedCursor != "" {
+				query = query.Where(sanitizedCursor)
+			}
 		}
 	}
 
@@ -552,56 +563,58 @@ func (h *Handler) applyPreloadWithRecursion(query common.SelectQuery, preload co
 	// Apply the preload
 	query = query.PreloadRelation(preload.Relation, func(sq common.SelectQuery) common.SelectQuery {
 		// Get the related model for column operations
-		relatedModel := h.getRelationModel(model, preload.Relation)
+		relationParts := strings.Split(preload.Relation, ",")
+		relatedModel := reflection.GetRelationModel(model, relationParts[0])
 		if relatedModel == nil {
 			logger.Warn("Could not get related model for preload: %s", preload.Relation)
-			relatedModel = model // fallback to parent model
-		}
+			// relatedModel = model // fallback to parent model
+		} else {
 
-		// If we have computed columns but no explicit columns, populate with all model columns first
-		// since computed columns are additions
-		if len(preload.Columns) == 0 && len(preload.ComputedQL) > 0 && relatedModel != nil {
-			logger.Debug("Populating preload columns with all model columns since computed columns are additions")
-			preload.Columns = reflection.GetSQLModelColumns(relatedModel)
-		}
+			// If we have computed columns but no explicit columns, populate with all model columns first
+			// since computed columns are additions
+			if len(preload.Columns) == 0 && (len(preload.ComputedQL) > 0 || len(preload.OmitColumns) > 0) {
+				logger.Debug("Populating preload columns with all model columns since computed columns are additions")
+				preload.Columns = reflection.GetSQLModelColumns(relatedModel)
+			}
 
-		// Apply ComputedQL fields if any
-		if len(preload.ComputedQL) > 0 {
-			for colName, colExpr := range preload.ComputedQL {
-				logger.Debug("Applying computed column to preload %s: %s", preload.Relation, colName)
-				sq = sq.ColumnExpr(fmt.Sprintf("(%s) AS %s", colExpr, colName))
-				// Remove the computed column from selected columns to avoid duplication
-				for colIndex := range preload.Columns {
-					if preload.Columns[colIndex] == colName {
-						preload.Columns = append(preload.Columns[:colIndex], preload.Columns[colIndex+1:]...)
-						break
+			// Apply ComputedQL fields if any
+			if len(preload.ComputedQL) > 0 {
+				for colName, colExpr := range preload.ComputedQL {
+					logger.Debug("Applying computed column to preload %s: %s", preload.Relation, colName)
+					sq = sq.ColumnExpr(fmt.Sprintf("(%s) AS %s", colExpr, colName))
+					// Remove the computed column from selected columns to avoid duplication
+					for colIndex := range preload.Columns {
+						if preload.Columns[colIndex] == colName {
+							preload.Columns = append(preload.Columns[:colIndex], preload.Columns[colIndex+1:]...)
+							break
+						}
 					}
 				}
 			}
-		}
 
-		// Handle OmitColumns
-		if len(preload.OmitColumns) > 0 && relatedModel != nil {
-			allCols := reflection.GetModelColumns(relatedModel)
-			// Remove omitted columns
-			preload.Columns = []string{}
-			for _, col := range allCols {
-				addCols := true
-				for _, omitCol := range preload.OmitColumns {
-					if col == omitCol {
-						addCols = false
-						break
+			// Handle OmitColumns
+			if len(preload.OmitColumns) > 0 {
+				allCols := preload.Columns
+				// Remove omitted columns
+				preload.Columns = []string{}
+				for _, col := range allCols {
+					addCols := true
+					for _, omitCol := range preload.OmitColumns {
+						if col == omitCol {
+							addCols = false
+							break
+						}
+					}
+					if addCols {
+						preload.Columns = append(preload.Columns, col)
 					}
 				}
-				if addCols {
-					preload.Columns = append(preload.Columns, col)
-				}
 			}
-		}
 
-		// Apply column selection
-		if len(preload.Columns) > 0 {
-			sq = sq.Column(preload.Columns...)
+			// Apply column selection
+			if len(preload.Columns) > 0 {
+				sq = sq.Column(preload.Columns...)
+			}
 		}
 
 		// Apply filters
@@ -620,12 +633,19 @@ func (h *Handler) applyPreloadWithRecursion(query common.SelectQuery, preload co
 
 		// Apply WHERE clause
 		if len(preload.Where) > 0 {
-			sq = sq.Where(preload.Where)
+			sanitizedWhere := common.SanitizeWhereClause(preload.Where, preload.Relation)
+			if len(sanitizedWhere) > 0 {
+				sq = sq.Where(sanitizedWhere)
+			}
 		}
 
 		// Apply limit
 		if preload.Limit != nil && *preload.Limit > 0 {
 			sq = sq.Limit(*preload.Limit)
+		}
+
+		if preload.Offset != nil && *preload.Offset > 0 {
+			sq = sq.Offset(*preload.Offset)
 		}
 
 		return sq
@@ -1312,7 +1332,7 @@ func (h *Handler) normalizeToSlice(data interface{}) []interface{} {
 func (h *Handler) extractNestedRelations(
 	data map[string]interface{},
 	model interface{},
-) (map[string]interface{}, map[string]interface{}, error) {
+) (_cleanedData map[string]interface{}, _relations map[string]interface{}, _err error) {
 	// Get model type for reflection
 	modelType := reflect.TypeOf(model)
 	for modelType != nil && (modelType.Kind() == reflect.Ptr || modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array) {
@@ -1741,7 +1761,7 @@ func (h *Handler) sendResponseWithOptions(w common.ResponseWriter, data interfac
 // Returns the single element if data is a slice/array with exactly one element, otherwise returns data unchanged
 func (h *Handler) normalizeResultArray(data interface{}) interface{} {
 	if data == nil {
-		return data
+		return nil
 	}
 
 	// Use reflection to check if data is a slice or array

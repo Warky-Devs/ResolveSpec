@@ -1149,6 +1149,11 @@ func (h *Handler) applyPreloads(model interface{}, query common.SelectQuery, pre
 
 		logger.Debug("Applying preload: %s", relationFieldName)
 		query = query.PreloadRelation(relationFieldName, func(sq common.SelectQuery) common.SelectQuery {
+			if len(preload.Columns) == 0 && (len(preload.ComputedQL) > 0 || len(preload.OmitColumns) > 0) {
+				preload.Columns = reflection.GetSQLModelColumns(model)
+			}
+
+			// Handle column selection and omission
 			if len(preload.OmitColumns) > 0 {
 				allCols := reflection.GetSQLModelColumns(model)
 				// Remove omitted columns
@@ -1204,7 +1209,10 @@ func (h *Handler) applyPreloads(model interface{}, query common.SelectQuery, pre
 			}
 
 			if len(preload.Where) > 0 {
-				sq = sq.Where(preload.Where)
+				sanitizedWhere := common.SanitizeWhereClause(preload.Where, preload.Relation)
+				if len(sanitizedWhere) > 0 {
+					sq = sq.Where(sanitizedWhere)
+				}
 			}
 
 			if preload.Limit != nil && *preload.Limit > 0 {

@@ -238,13 +238,13 @@ func (t *SqlTimeStamp) UnmarshalJSON(b []byte) error {
 	var err error
 
 	if b == nil {
-		t = &SqlTimeStamp{}
+
 		return nil
 	}
 	s := strings.Trim(strings.Trim(string(b), " "), "\"")
 	if s == "null" || s == "" || s == "0" ||
 		s == "0001-01-01T00:00:00" || s == "0001-01-01" {
-		t = &SqlTimeStamp{}
+
 		return nil
 	}
 
@@ -293,7 +293,7 @@ func (t *SqlTimeStamp) Scan(value interface{}) error {
 
 // String - Override String format of time
 func (t SqlTimeStamp) String() string {
-	return fmt.Sprintf("%s", time.Time(t).Format("2006-01-02T15:04:05"))
+	return time.Time(t).Format("2006-01-02T15:04:05")
 }
 
 // GetTime - Returns Time
@@ -308,7 +308,7 @@ func (t *SqlTimeStamp) SetTime(pTime time.Time) {
 
 // Format - Formats the time
 func (t SqlTimeStamp) Format(layout string) string {
-	return fmt.Sprintf("%s", time.Time(t).Format(layout))
+	return time.Time(t).Format(layout)
 }
 
 func SqlTimeStampNow() SqlTimeStamp {
@@ -420,7 +420,6 @@ func (t *SqlDate) UnmarshalJSON(b []byte) error {
 	if s == "null" || s == "" || s == "0" ||
 		strings.HasPrefix(s, "0001-01-01T00:00:00") ||
 		s == "0001-01-01" {
-		t = &SqlDate{}
 		return nil
 	}
 
@@ -434,7 +433,7 @@ func (t *SqlDate) UnmarshalJSON(b []byte) error {
 
 // MarshalJSON - Override JSON format of time
 func (t SqlDate) MarshalJSON() ([]byte, error) {
-	tmstr := time.Time(t).Format("2006-01-02") //time.RFC3339
+	tmstr := time.Time(t).Format("2006-01-02") // time.RFC3339
 	if strings.HasPrefix(tmstr, "0001-01-01") {
 		return []byte("null"), nil
 	}
@@ -482,7 +481,7 @@ func (t SqlDate) Int64() int64 {
 
 // String - Override String format of time
 func (t SqlDate) String() string {
-	tmstr := time.Time(t).Format("2006-01-02") //time.RFC3339
+	tmstr := time.Time(t).Format("2006-01-02") // time.RFC3339
 	if strings.HasPrefix(tmstr, "0001-01-01") || strings.HasPrefix(tmstr, "1800-12-31") {
 		return "0"
 	}
@@ -517,8 +516,8 @@ func (t *SqlTime) UnmarshalJSON(b []byte) error {
 		*t = SqlTime{}
 		return nil
 	}
-	tx := time.Time{}
-	tx, err = tryParseDT(s)
+
+	tx, err := tryParseDT(s)
 	*t = SqlTime(tx)
 
 	return err
@@ -642,9 +641,8 @@ func (n SqlJSONB) AsSlice() ([]any, error) {
 func (n *SqlJSONB) UnmarshalJSON(b []byte) error {
 
 	s := strings.Trim(strings.Trim(string(b), " "), "\"")
-	invalid := (s == "null" || s == "" || len(s) < 2) || !(strings.Contains(s, "{") || strings.Contains(s, "["))
+	invalid := (s == "null" || s == "" || len(s) < 2) || (!strings.Contains(s, "{") && !strings.Contains(s, "["))
 	if invalid {
-		s = ""
 		return nil
 	}
 
@@ -661,7 +659,7 @@ func (n SqlJSONB) MarshalJSON() ([]byte, error) {
 	var obj interface{}
 	err := json.Unmarshal(n, &obj)
 	if err != nil {
-		//fmt.Printf("Invalid JSON %v", err)
+		// fmt.Printf("Invalid JSON %v", err)
 		return []byte("null"), nil
 	}
 
@@ -725,7 +723,6 @@ func (n *SqlUUID) UnmarshalJSON(b []byte) error {
 	s := strings.Trim(strings.Trim(string(b), " "), "\"")
 	invalid := (s == "null" || s == "" || len(s) < 30)
 	if invalid {
-		s = ""
 		return nil
 	}
 	*n = SqlUUID(sql.NullString{String: s, Valid: !invalid})

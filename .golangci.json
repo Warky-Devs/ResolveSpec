@@ -86,7 +86,6 @@
           "emptyFallthrough",
           "equalFold",
           "flagName",
-          "ifElseChain",
           "indexAlloc",
           "initClause",
           "methodExprCall",
@@ -106,6 +105,9 @@
           "unnecessaryBlock",
           "weakCond",
           "yodaStyleExpr"
+        ],
+        "disabled-checks": [
+          "ifElseChain"
         ]
       },
       "revive": {

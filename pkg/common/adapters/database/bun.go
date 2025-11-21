@@ -237,7 +237,10 @@ func (b *BunSelectQuery) PreloadRelation(relation string, apply ...func(common.S
 	b.query = b.query.Relation(relation, func(sq *bun.SelectQuery) *bun.SelectQuery {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.HandlePanic("BunSelectQuery.PreloadRelation", r)
+				err := logger.HandlePanic("BunSelectQuery.PreloadRelation", r)
+				if err != nil {
+					return
+				}
 			}
 		}()
 		if len(apply) == 0 {
@@ -401,7 +404,7 @@ func (b *BunInsertQuery) Exec(ctx context.Context) (res common.Result, err error
 			err = logger.HandlePanic("BunInsertQuery.Exec", r)
 		}
 	}()
-	if b.values != nil && len(b.values) > 0 {
+	if len(b.values) > 0 {
 		if !b.hasModel {
 			// If no model was set, use the values map as the model
 			// Bun can insert map[string]interface{} directly

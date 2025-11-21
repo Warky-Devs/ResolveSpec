@@ -26,8 +26,7 @@ func GetModelColumnDetail(record reflect.Value) []ModelFieldDetail {
 		}
 	}()
 
-	var lst []ModelFieldDetail
-	lst = make([]ModelFieldDetail, 0)
+	lst := make([]ModelFieldDetail, 0)
 
 	if !record.IsValid() {
 		return lst

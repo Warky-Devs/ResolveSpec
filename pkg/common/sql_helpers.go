@@ -96,6 +96,117 @@ func IsSQLExpression(cond string) bool {
 	return false
 }
 
+// IsTrivialCondition checks if a condition is trivial and always evaluates to true
+// These conditions should be removed from WHERE clauses as they have no filtering effect
+func IsTrivialCondition(cond string) bool {
+	cond = strings.TrimSpace(cond)
+	lowerCond := strings.ToLower(cond)
+
+	// Conditions that always evaluate to true
+	trivialConditions := []string{
+		"1=1", "1 = 1", "1= 1", "1 =1",
+		"true", "true = true", "true=true", "true= true", "true =true",
+		"0=0", "0 = 0", "0= 0", "0 =0",
+	}
+
+	for _, trivial := range trivialConditions {
+		if lowerCond == trivial {
+			return true
+		}
+	}
+
+	return false
+}
+
+// SanitizeWhereClause removes trivial conditions and optionally prefixes table/relation names to columns
+// This function should be used everywhere a WHERE statement is sent to ensure clean, efficient SQL
+//
+// Parameters:
+//   - where: The WHERE clause string to sanitize
+//   - tableName: Optional table/relation name to prefix to column references (empty string to skip prefixing)
+//
+// Returns:
+//   - The sanitized WHERE clause with trivial conditions removed and columns optionally prefixed
+//   - An empty string if all conditions were trivial or the input was empty
+func SanitizeWhereClause(where string, tableName string) string {
+	if where == "" {
+		return ""
+	}
+
+	where = strings.TrimSpace(where)
+
+	// Split by AND to handle multiple conditions
+	conditions := splitByAND(where)
+
+	validConditions := make([]string, 0, len(conditions))
+
+	for _, cond := range conditions {
+		cond = strings.TrimSpace(cond)
+		if cond == "" {
+			continue
+		}
+
+		// Skip trivial conditions that always evaluate to true
+		if IsTrivialCondition(cond) {
+			logger.Debug("Removing trivial condition: '%s'", cond)
+			continue
+		}
+
+		// If tableName is provided and the condition doesn't already have a table prefix,
+		// attempt to add it
+		if tableName != "" && !hasTablePrefix(cond) {
+			// Check if this is a SQL expression/literal that shouldn't be prefixed
+			if !IsSQLExpression(strings.ToLower(cond)) {
+				// Extract the column name and prefix it
+				columnName := ExtractColumnName(cond)
+				if columnName != "" {
+					cond = strings.Replace(cond, columnName, tableName+"."+columnName, 1)
+					logger.Debug("Prefixed column in condition: '%s'", cond)
+				}
+			}
+		}
+
+		validConditions = append(validConditions, cond)
+	}
+
+	if len(validConditions) == 0 {
+		return ""
+	}
+
+	result := strings.Join(validConditions, " AND ")
+
+	if result != where {
+		logger.Debug("Sanitized WHERE clause: '%s' -> '%s'", where, result)
+	}
+
+	return result
+}
+
+// splitByAND splits a WHERE clause by AND operators (case-insensitive)
+// This is a simple split that doesn't handle nested parentheses or complex expressions
+func splitByAND(where string) []string {
+	// First try uppercase AND
+	conditions := strings.Split(where, " AND ")
+
+	// If we didn't split on uppercase, try lowercase
+	if len(conditions) == 1 {
+		conditions = strings.Split(where, " and ")
+	}
+
+	// If we still didn't split, try mixed case
+	if len(conditions) == 1 {
+		conditions = strings.Split(where, " And ")
+	}
+
+	return conditions
+}
+
+// hasTablePrefix checks if a condition already has a table/relation prefix (contains a dot)
+func hasTablePrefix(cond string) bool {
+	// Look for patterns like "table.column" or "`table`.`column`" or "\"table\".\"column\""
+	return strings.Contains(cond, ".")
+}
+
 // ExtractColumnName extracts the column name from a WHERE condition
 // For example: "status = 'active'" returns "status"
 func ExtractColumnName(cond string) string {

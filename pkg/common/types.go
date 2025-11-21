@@ -40,7 +40,7 @@ type PreloadOption struct {
 	Where       string            `json:"where"`
 	Limit       *int              `json:"limit"`
 	Offset      *int              `json:"offset"`
-	Updatable   *bool             `json:"updateable"` // if true, the relation can be updated
+	Updatable   *bool             `json:"updateable"`  // if true, the relation can be updated
 	ComputedQL  map[string]string `json:"computed_ql"` // Computed columns as SQL expressions
 	Recursive   bool              `json:"recursive"`   // if true, preload recursively up to 5 levels
 }

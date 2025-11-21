@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/bitechdev/ResolveSpec/pkg/logger"
+	"github.com/bitechdev/ResolveSpec/pkg/reflection"
 )
 
 // ColumnValidator validates column names against a model's fields
@@ -92,23 +93,6 @@ func (v *ColumnValidator) getColumnName(field reflect.StructField) string {
 	return strings.ToLower(field.Name)
 }
 
-// extractSourceColumn extracts the base column name from PostgreSQL JSON operators
-// Examples:
-//   - "columna->>'val'" returns "columna"
-//   - "columna->'key'" returns "columna"
-//   - "columna" returns "columna"
-//   - "table.columna->>'val'" returns "table.columna"
-func extractSourceColumn(colName string) string {
-	// Check for PostgreSQL JSON operators: -> and ->>
-	if idx := strings.Index(colName, "->>"); idx != -1 {
-		return strings.TrimSpace(colName[:idx])
-	}
-	if idx := strings.Index(colName, "->"); idx != -1 {
-		return strings.TrimSpace(colName[:idx])
-	}
-	return colName
-}
-
 // ValidateColumn validates a single column name
 // Returns nil if valid, error if invalid
 // Columns prefixed with "cql" (case insensitive) are always valid
@@ -125,7 +109,7 @@ func (v *ColumnValidator) ValidateColumn(column string) error {
 	}
 
 	// Extract source column name (remove JSON operators like ->> or ->)
-	sourceColumn := extractSourceColumn(column)
+	sourceColumn := reflection.ExtractSourceColumn(column)
 
 	// Check if column exists in model
 	if _, exists := v.validColumns[strings.ToLower(sourceColumn)]; !exists {

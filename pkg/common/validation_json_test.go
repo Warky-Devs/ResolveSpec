@@ -2,6 +2,8 @@ package common
 
 import (
 	"testing"
+
+	"github.com/bitechdev/ResolveSpec/pkg/reflection"
 )
 
 func TestExtractSourceColumn(t *testing.T) {
@@ -49,9 +51,9 @@ func TestExtractSourceColumn(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := extractSourceColumn(tc.input)
+			result := reflection.ExtractSourceColumn(tc.input)
 			if result != tc.expected {
-				t.Errorf("extractSourceColumn(%q) = %q; want %q", tc.input, result, tc.expected)
+				t.Errorf("reflection.ExtractSourceColumn(%q) = %q; want %q", tc.input, result, tc.expected)
 			}
 		})
 	}
