@@ -117,15 +117,28 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request, model interface{}) E
 	// Get all headers
 	headers := r.AllHeaders()
 
-	// Process each header
+	// Get all query parameters
+	queryParams := r.AllQueryParams()
+
+	// Merge headers and query parameters - query parameters take precedence
+	// This allows the same parameters to be specified in either headers or query string
+	combinedParams := make(map[string]string)
 	for key, value := range headers {
-		// Normalize header key to lowercase for consistent matching
+		combinedParams[key] = value
+	}
+	for key, value := range queryParams {
+		combinedParams[key] = value
+	}
+
+	// Process each parameter (from both headers and query params)
+	for key, value := range combinedParams {
+		// Normalize parameter key to lowercase for consistent matching
 		normalizedKey := strings.ToLower(key)
 
 		// Decode value if it's base64 encoded
 		decodedValue := decodeHeaderValue(value)
 
-		// Parse based on header prefix/name
+		// Parse based on parameter prefix/name
 		switch {
 		// Field Selection
 		case strings.HasPrefix(normalizedKey, "x-select-fields"):
@@ -158,7 +171,7 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request, model interface{}) E
 			if strings.HasSuffix(normalizedKey, "-where") {
 				continue
 			}
-			whereClaude := headers[fmt.Sprintf("%s-where", key)]
+			whereClaude := combinedParams[fmt.Sprintf("%s-where", key)]
 			h.parsePreload(&options, decodedValue, decodeHeaderValue(whereClaude))
 
 		case strings.HasPrefix(normalizedKey, "x-expand"):

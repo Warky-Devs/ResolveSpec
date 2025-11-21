@@ -116,6 +116,7 @@ type Request interface {
 	Body() ([]byte, error)
 	PathParam(key string) string
 	QueryParam(key string) string
+	AllQueryParams() map[string]string // Get all query parameters as a map
 }
 
 // ResponseWriter interface abstracts HTTP response
