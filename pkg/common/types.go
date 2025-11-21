@@ -32,15 +32,17 @@ type Parameter struct {
 }
 
 type PreloadOption struct {
-	Relation    string         `json:"relation"`
-	Columns     []string       `json:"columns"`
-	OmitColumns []string       `json:"omit_columns"`
-	Sort        []SortOption   `json:"sort"`
-	Filters     []FilterOption `json:"filters"`
-	Where       string         `json:"where"`
-	Limit       *int           `json:"limit"`
-	Offset      *int           `json:"offset"`
-	Updatable   *bool          `json:"updateable"` // if true, the relation can be updated
+	Relation    string            `json:"relation"`
+	Columns     []string          `json:"columns"`
+	OmitColumns []string          `json:"omit_columns"`
+	Sort        []SortOption      `json:"sort"`
+	Filters     []FilterOption    `json:"filters"`
+	Where       string            `json:"where"`
+	Limit       *int              `json:"limit"`
+	Offset      *int              `json:"offset"`
+	Updatable   *bool             `json:"updateable"` // if true, the relation can be updated
+	ComputedQL  map[string]string `json:"computed_ql"` // Computed columns as SQL expressions
+	Recursive   bool              `json:"recursive"`   // if true, preload recursively up to 5 levels
 }
 
 type FilterOption struct {

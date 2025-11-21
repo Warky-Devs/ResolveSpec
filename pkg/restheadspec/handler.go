@@ -360,50 +360,8 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 			preload.Where = fixedWhere
 		}
 
-		query = query.PreloadRelation(preload.Relation, func(sq common.SelectQuery) common.SelectQuery {
-			if len(preload.OmitColumns) > 0 {
-				allCols := reflection.GetModelColumns(model)
-				// Remove omitted columns
-				preload.Columns = []string{}
-				for _, col := range allCols {
-					addCols := true
-					for _, omitCol := range preload.OmitColumns {
-						if col == omitCol {
-							addCols = false
-							break
-						}
-					}
-					if addCols {
-						preload.Columns = append(preload.Columns, col)
-					}
-				}
-			}
-
-			if len(preload.Columns) > 0 {
-				sq = sq.Column(preload.Columns...)
-			}
-
-			if len(preload.Filters) > 0 {
-				for _, filter := range preload.Filters {
-					sq = h.applyFilter(sq, filter, "", false, "AND")
-				}
-			}
-			if len(preload.Sort) > 0 {
-				for _, sort := range preload.Sort {
-					sq = sq.Order(fmt.Sprintf("%s %s", sort.Column, sort.Direction))
-				}
-			}
-
-			if len(preload.Where) > 0 {
-				sq = sq.Where(preload.Where)
-			}
-
-			if preload.Limit != nil && *preload.Limit > 0 {
-				sq = sq.Limit(*preload.Limit)
-			}
-
-			return sq
-		})
+		// Apply the preload with recursive support
+		query = h.applyPreloadWithRecursion(query, preload, model, 0)
 	}
 
 	// Apply DISTINCT if requested
@@ -587,6 +545,111 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	}
 
 	h.sendFormattedResponse(w, modelPtr, metadata, options)
+}
+
+// applyPreloadWithRecursion applies a preload with support for ComputedQL and recursive preloading
+func (h *Handler) applyPreloadWithRecursion(query common.SelectQuery, preload common.PreloadOption, model interface{}, depth int) common.SelectQuery {
+	// Apply the preload
+	query = query.PreloadRelation(preload.Relation, func(sq common.SelectQuery) common.SelectQuery {
+		// Get the related model for column operations
+		relatedModel := h.getRelationModel(model, preload.Relation)
+		if relatedModel == nil {
+			logger.Warn("Could not get related model for preload: %s", preload.Relation)
+			relatedModel = model // fallback to parent model
+		}
+
+		// If we have computed columns but no explicit columns, populate with all model columns first
+		// since computed columns are additions
+		if len(preload.Columns) == 0 && len(preload.ComputedQL) > 0 && relatedModel != nil {
+			logger.Debug("Populating preload columns with all model columns since computed columns are additions")
+			preload.Columns = reflection.GetSQLModelColumns(relatedModel)
+		}
+
+		// Apply ComputedQL fields if any
+		if len(preload.ComputedQL) > 0 {
+			for colName, colExpr := range preload.ComputedQL {
+				logger.Debug("Applying computed column to preload %s: %s", preload.Relation, colName)
+				sq = sq.ColumnExpr(fmt.Sprintf("(%s) AS %s", colExpr, colName))
+				// Remove the computed column from selected columns to avoid duplication
+				for colIndex := range preload.Columns {
+					if preload.Columns[colIndex] == colName {
+						preload.Columns = append(preload.Columns[:colIndex], preload.Columns[colIndex+1:]...)
+						break
+					}
+				}
+			}
+		}
+
+		// Handle OmitColumns
+		if len(preload.OmitColumns) > 0 && relatedModel != nil {
+			allCols := reflection.GetModelColumns(relatedModel)
+			// Remove omitted columns
+			preload.Columns = []string{}
+			for _, col := range allCols {
+				addCols := true
+				for _, omitCol := range preload.OmitColumns {
+					if col == omitCol {
+						addCols = false
+						break
+					}
+				}
+				if addCols {
+					preload.Columns = append(preload.Columns, col)
+				}
+			}
+		}
+
+		// Apply column selection
+		if len(preload.Columns) > 0 {
+			sq = sq.Column(preload.Columns...)
+		}
+
+		// Apply filters
+		if len(preload.Filters) > 0 {
+			for _, filter := range preload.Filters {
+				sq = h.applyFilter(sq, filter, "", false, "AND")
+			}
+		}
+
+		// Apply sorting
+		if len(preload.Sort) > 0 {
+			for _, sort := range preload.Sort {
+				sq = sq.Order(fmt.Sprintf("%s %s", sort.Column, sort.Direction))
+			}
+		}
+
+		// Apply WHERE clause
+		if len(preload.Where) > 0 {
+			sq = sq.Where(preload.Where)
+		}
+
+		// Apply limit
+		if preload.Limit != nil && *preload.Limit > 0 {
+			sq = sq.Limit(*preload.Limit)
+		}
+
+		return sq
+	})
+
+	// Handle recursive preloading
+	if preload.Recursive && depth < 5 {
+		logger.Debug("Applying recursive preload for %s at depth %d", preload.Relation, depth+1)
+
+		// For recursive relationships, we need to get the last part of the relation path
+		// e.g., "MastertaskItems" -> "MastertaskItems.MastertaskItems"
+		relationParts := strings.Split(preload.Relation, ".")
+		lastRelationName := relationParts[len(relationParts)-1]
+
+		// Create a recursive preload with the same configuration
+		// but with the relation path extended
+		recursivePreload := preload
+		recursivePreload.Relation = preload.Relation + "." + lastRelationName
+
+		// Recursively apply preload until we reach depth 5
+		query = h.applyPreloadWithRecursion(query, recursivePreload, model, depth+1)
+	}
+
+	return query
 }
 
 func (h *Handler) handleCreate(ctx context.Context, w common.ResponseWriter, data interface{}, options ExtendedRequestOptions) {

@@ -110,8 +110,8 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request, model interface{}) E
 		AdvancedSQL:          make(map[string]string),
 		ComputedQL:           make(map[string]string),
 		Expand:               make([]ExpandOption, 0),
-		ResponseFormat:       "simple",           // Default response format
-		SingleRecordAsObject: true,               // Default: normalize single-element arrays to objects
+		ResponseFormat:       "simple", // Default response format
+		SingleRecordAsObject: true,     // Default: normalize single-element arrays to objects
 	}
 
 	// Get all headers
@@ -183,14 +183,37 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request, model interface{}) E
 		// Sorting & Pagination
 		case strings.HasPrefix(normalizedKey, "x-sort"):
 			h.parseSorting(&options, decodedValue)
+		//Special cases for older clients using sort(a,b,-c) syntax
+		case strings.HasPrefix(normalizedKey, "sort(") && strings.Contains(normalizedKey, ")"):
+			sortValue := normalizedKey[strings.Index(normalizedKey, "(")+1 : strings.Index(normalizedKey, ")")]
+			h.parseSorting(&options, sortValue)
 		case strings.HasPrefix(normalizedKey, "x-limit"):
 			if limit, err := strconv.Atoi(decodedValue); err == nil {
 				options.Limit = &limit
 			}
+		//Special cases for older clients using limit(n) syntax
+		case strings.HasPrefix(normalizedKey, "limit(") && strings.Contains(normalizedKey, ")"):
+			limitValue := normalizedKey[strings.Index(normalizedKey, "(")+1 : strings.Index(normalizedKey, ")")]
+			limitValueParts := strings.Split(limitValue, ",")
+
+			if len(limitValueParts) > 1 {
+				if offset, err := strconv.Atoi(limitValueParts[0]); err == nil {
+					options.Offset = &offset
+				}
+				if limit, err := strconv.Atoi(limitValueParts[1]); err == nil {
+					options.Limit = &limit
+				}
+			} else {
+				if limit, err := strconv.Atoi(limitValueParts[0]); err == nil {
+					options.Limit = &limit
+				}
+			}
+
 		case strings.HasPrefix(normalizedKey, "x-offset"):
 			if offset, err := strconv.Atoi(decodedValue); err == nil {
 				options.Offset = &offset
 			}
+
 		case strings.HasPrefix(normalizedKey, "x-cursor-forward"):
 			options.CursorForward = decodedValue
 		case strings.HasPrefix(normalizedKey, "x-cursor-backward"):
@@ -934,6 +957,19 @@ func (h *Handler) addXFilesPreload(xfile *XFiles, options *ExtendedRequestOption
 			preloadOpt.Limit = &limit
 		}
 	}
+
+	// Add computed columns (CQL) -> ComputedQL
+	if len(xfile.CQLColumns) > 0 {
+		preloadOpt.ComputedQL = make(map[string]string)
+		for i, cqlExpr := range xfile.CQLColumns {
+			colName := fmt.Sprintf("cql%d", i+1)
+			preloadOpt.ComputedQL[colName] = cqlExpr
+			logger.Debug("X-Files: Added computed column %s to preload %s: %s", colName, relationPath, cqlExpr)
+		}
+	}
+
+	// Set recursive flag
+	preloadOpt.Recursive = xfile.Recursive
 
 	// Add the preload option
 	options.Preload = append(options.Preload, preloadOpt)
