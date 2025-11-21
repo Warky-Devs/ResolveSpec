@@ -191,6 +191,11 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		query = query.Table(tableName)
 	}
 
+	if len(options.Columns) == 0 && (len(options.ComputedColumns) > 0) {
+		logger.Debug("Populating options.Columns with all model columns since computed columns are additions")
+		options.Columns = reflection.GetSQLModelColumns(model)
+	}
+
 	// Apply column selection
 	if len(options.Columns) > 0 {
 		logger.Debug("Selecting columns: %v", options.Columns)
@@ -1145,7 +1150,7 @@ func (h *Handler) applyPreloads(model interface{}, query common.SelectQuery, pre
 		logger.Debug("Applying preload: %s", relationFieldName)
 		query = query.PreloadRelation(relationFieldName, func(sq common.SelectQuery) common.SelectQuery {
 			if len(preload.OmitColumns) > 0 {
-				allCols := reflection.GetModelColumns(model)
+				allCols := reflection.GetSQLModelColumns(model)
 				// Remove omitted columns
 				preload.Columns = []string{}
 				for _, col := range allCols {

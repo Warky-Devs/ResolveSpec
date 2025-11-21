@@ -264,7 +264,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	// populate it with all model columns first since computed columns are additions
 	if len(options.Columns) == 0 && (len(options.ComputedQL) > 0 || len(options.ComputedColumns) > 0) {
 		logger.Debug("Populating options.Columns with all model columns since computed columns are additions")
-		options.Columns = reflection.GetModelColumns(model)
+		options.Columns = reflection.GetSQLModelColumns(model)
 	}
 
 	// Apply ComputedQL fields if any

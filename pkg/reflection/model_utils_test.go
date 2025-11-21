@@ -474,3 +474,143 @@ func TestIsColumnWritableWithEmbedded(t *testing.T) {
 		})
 	}
 }
+
+// Test models with relations for GetSQLModelColumns
+type User struct {
+	ID          int       `bun:"id,pk" json:"id"`
+	Name        string    `bun:"name" json:"name"`
+	Email       string    `bun:"email" json:"email"`
+	ProfileData string    `json:"profile_data"` // No bun/gorm tag
+	Posts       []Post    `bun:"rel:has-many,join:id=user_id" json:"posts"`
+	Profile     *Profile  `bun:"rel:has-one,join:id=user_id" json:"profile"`
+	RowNumber   int64     `bun:",scanonly" json:"_rownumber"`
+}
+
+type Post struct {
+	ID      int    `gorm:"column:id;primaryKey" json:"id"`
+	Title   string `gorm:"column:title" json:"title"`
+	UserID  int    `gorm:"column:user_id;foreignKey" json:"user_id"`
+	User    *User  `gorm:"foreignKey:UserID;references:ID" json:"user"`
+	Tags    []Tag  `gorm:"many2many:post_tags" json:"tags"`
+	Content string `json:"content"` // No bun/gorm tag
+}
+
+type Profile struct {
+	ID     int    `bun:"id,pk" json:"id"`
+	Bio    string `bun:"bio" json:"bio"`
+	UserID int    `bun:"user_id" json:"user_id"`
+}
+
+type Tag struct {
+	ID   int    `gorm:"column:id;primaryKey" json:"id"`
+	Name string `gorm:"column:name" json:"name"`
+}
+
+// Model with scan-only embedded struct
+type EntityWithScanOnlyEmbedded struct {
+	ID          int    `bun:"id,pk" json:"id"`
+	Name        string `bun:"name" json:"name"`
+	AdhocBuffer `bun:",scanonly"` // Entire embedded struct is scan-only
+}
+
+func TestGetSQLModelColumns(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    any
+		expected []string
+	}{
+		{
+			name:  "Bun model with relations - excludes relations and non-SQL fields",
+			model: User{},
+			// Should include: id, name, email (has bun tags)
+			// Should exclude: profile_data (no bun tag), Posts/Profile (relations), RowNumber (scan-only in embedded would be excluded)
+			expected: []string{"id", "name", "email"},
+		},
+		{
+			name:  "GORM model with relations - excludes relations and non-SQL fields",
+			model: Post{},
+			// Should include: id, title, user_id (has gorm tags)
+			// Should exclude: content (no gorm tag), User/Tags (relations)
+			expected: []string{"id", "title", "user_id"},
+		},
+		{
+			name:  "Model with embedded base and scan-only embedded",
+			model: EntityWithScanOnlyEmbedded{},
+			// Should include: id, name from main struct
+			// Should exclude: all fields from AdhocBuffer (scan-only embedded struct)
+			expected: []string{"id", "name"},
+		},
+		{
+			name:  "Model with embedded - includes SQL fields, excludes scan-only",
+			model: ModelWithEmbedded{},
+			// Should include: rid_base, created_at (from BaseModel), name, description (from main)
+			// Should exclude: cql1, cql2, _rownumber (from AdhocBuffer - scan-only fields)
+			expected: []string{"rid_base", "created_at", "name", "description"},
+		},
+		{
+			name:  "GORM model with embedded - includes SQL fields, excludes scan-only",
+			model: GormModelWithEmbedded{},
+			// Should include: rid_base, created_at (from GormBaseModel), name, description (from main)
+			// Should exclude: cql1, cql2 (scan-only), _rownumber (no gorm column tag, marked as -)
+			expected: []string{"rid_base", "created_at", "name", "description"},
+		},
+		{
+			name:  "Simple Profile model",
+			model: Profile{},
+			// Should include all fields with bun tags
+			expected: []string{"id", "bio", "user_id"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetSQLModelColumns(tt.model)
+			if len(result) != len(tt.expected) {
+				t.Errorf("GetSQLModelColumns() returned %d columns, want %d.\nGot: %v\nWant: %v",
+					len(result), len(tt.expected), result, tt.expected)
+				return
+			}
+			for i, col := range result {
+				if col != tt.expected[i] {
+					t.Errorf("GetSQLModelColumns()[%d] = %v, want %v.\nFull result: %v",
+						i, col, tt.expected[i], result)
+				}
+			}
+		})
+	}
+}
+
+func TestGetSQLModelColumnsVsGetModelColumns(t *testing.T) {
+	// Demonstrate the difference between GetModelColumns and GetSQLModelColumns
+	user := User{}
+
+	allColumns := GetModelColumns(user)
+	sqlColumns := GetSQLModelColumns(user)
+
+	t.Logf("GetModelColumns(User): %v", allColumns)
+	t.Logf("GetSQLModelColumns(User): %v", sqlColumns)
+
+	// GetModelColumns should return more columns (includes fields with only json tags)
+	if len(allColumns) <= len(sqlColumns) {
+		t.Errorf("Expected GetModelColumns to return more columns than GetSQLModelColumns")
+	}
+
+	// GetSQLModelColumns should not include 'profile_data' (no bun tag)
+	for _, col := range sqlColumns {
+		if col == "profile_data" {
+			t.Errorf("GetSQLModelColumns should not include 'profile_data' (no bun/gorm tag)")
+		}
+	}
+
+	// GetModelColumns should include 'profile_data' (has json tag)
+	hasProfileData := false
+	for _, col := range allColumns {
+		if col == "profile_data" {
+			hasProfileData = true
+			break
+		}
+	}
+	if !hasProfileData {
+		t.Errorf("GetModelColumns should include 'profile_data' (has json tag)")
+	}
+}

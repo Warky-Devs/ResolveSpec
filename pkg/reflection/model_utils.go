@@ -323,6 +323,127 @@ func ExtractColumnFromBunTag(tag string) string {
 	return ""
 }
 
+// GetSQLModelColumns extracts column names that have valid SQL field mappings
+// This function only returns columns that:
+// 1. Have bun or gorm tags (not just json tags)
+// 2. Are not relations (no rel:, join:, foreignKey, references, many2many tags)
+// 3. Are not scan-only embedded fields
+func GetSQLModelColumns(model any) []string {
+	var columns []string
+
+	modelType := reflect.TypeOf(model)
+
+	// Unwrap pointers, slices, and arrays to get to the base struct type
+	for modelType != nil && (modelType.Kind() == reflect.Pointer || modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array) {
+		modelType = modelType.Elem()
+	}
+
+	// Validate that we have a struct type
+	if modelType == nil || modelType.Kind() != reflect.Struct {
+		return columns
+	}
+
+	collectSQLColumnsFromType(modelType, &columns, false)
+
+	return columns
+}
+
+// collectSQLColumnsFromType recursively collects SQL column names from a struct type
+// scanOnlyEmbedded indicates if we're inside a scan-only embedded struct
+func collectSQLColumnsFromType(typ reflect.Type, columns *[]string, scanOnlyEmbedded bool) {
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+
+		// Check if this is an embedded struct
+		if field.Anonymous {
+			// Unwrap pointer type if necessary
+			fieldType := field.Type
+			if fieldType.Kind() == reflect.Pointer {
+				fieldType = fieldType.Elem()
+			}
+
+			// Check if the embedded struct itself is scan-only
+			isScanOnly := scanOnlyEmbedded
+			bunTag := field.Tag.Get("bun")
+			if bunTag != "" && isBunFieldScanOnly(bunTag) {
+				isScanOnly = true
+			}
+
+			// Recursively process embedded struct
+			if fieldType.Kind() == reflect.Struct {
+				collectSQLColumnsFromType(fieldType, columns, isScanOnly)
+				continue
+			}
+		}
+
+		// Skip fields in scan-only embedded structs
+		if scanOnlyEmbedded {
+			continue
+		}
+
+		// Get bun and gorm tags
+		bunTag := field.Tag.Get("bun")
+		gormTag := field.Tag.Get("gorm")
+
+		// Skip if neither bun nor gorm tag exists
+		if bunTag == "" && gormTag == "" {
+			continue
+		}
+
+		// Skip if explicitly marked with "-"
+		if bunTag == "-" || gormTag == "-" {
+			continue
+		}
+
+		// Skip if field itself is scan-only (bun)
+		if bunTag != "" && isBunFieldScanOnly(bunTag) {
+			continue
+		}
+
+		// Skip if field itself is read-only (gorm)
+		if gormTag != "" && isGormFieldReadOnly(gormTag) {
+			continue
+		}
+
+		// Skip relation fields (bun)
+		if bunTag != "" {
+			// Skip if it's a bun relation (rel:, join:, or m2m:)
+			if strings.Contains(bunTag, "rel:") ||
+			   strings.Contains(bunTag, "join:") ||
+			   strings.Contains(bunTag, "m2m:") {
+				continue
+			}
+		}
+
+		// Skip relation fields (gorm)
+		if gormTag != "" {
+			// Skip if it has gorm relationship tags
+			if strings.Contains(gormTag, "foreignKey:") ||
+			   strings.Contains(gormTag, "references:") ||
+			   strings.Contains(gormTag, "many2many:") ||
+			   strings.Contains(gormTag, "constraint:") {
+				continue
+			}
+		}
+
+		// Get column name
+		columnName := ""
+		if bunTag != "" {
+			columnName = ExtractColumnFromBunTag(bunTag)
+		}
+		if columnName == "" && gormTag != "" {
+			columnName = ExtractColumnFromGormTag(gormTag)
+		}
+
+		// Skip if we couldn't extract a column name
+		if columnName == "" {
+			continue
+		}
+
+		*columns = append(*columns, columnName)
+	}
+}
+
 // IsColumnWritable checks if a column can be written to in the database
 // For bun: returns false if the field has "scanonly" tag
 // For gorm: returns false if the field has "<-:false" or "->" (read-only) tag
