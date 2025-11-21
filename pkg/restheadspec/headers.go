@@ -267,7 +267,7 @@ func (h *Handler) parseOptionsFromHeaders(r common.Request, model interface{}) E
 		h.resolveRelationNamesInOptions(&options, model)
 	}
 
-	//Always sort according to the primary key if no sorting is specified
+	// Always sort according to the primary key if no sorting is specified
 	if len(options.Sort) == 0 {
 		pkName := reflection.GetPrimaryKeyName(model)
 		options.Sort = []common.SortOption{{Column: pkName, Direction: "ASC"}}

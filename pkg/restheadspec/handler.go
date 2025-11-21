@@ -213,6 +213,10 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	tableName := GetTableName(ctx)
 	model := GetModel(ctx)
 
+	if id == "" {
+		options.SingleRecordAsObject = false
+	}
+
 	// Execute BeforeRead hooks
 	hookCtx := &HookContext{
 		Context:   ctx,
@@ -299,7 +303,10 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	// Apply column selection
 	if len(options.Columns) > 0 {
 		logger.Debug("Selecting columns: %v", options.Columns)
-		query = query.Column(options.Columns...)
+		for _, col := range options.Columns {
+			query = query.Column(reflection.ExtractSourceColumn(col))
+		}
+
 	}
 
 	// Apply expand (Just expand to Preload for now)
@@ -652,7 +659,6 @@ func (h *Handler) applyPreloadWithRecursion(query common.SelectQuery, preload co
 				sq = sq.Order(fmt.Sprintf("%s %s", sort.Column, sort.Direction))
 			}
 		}
-		
 
 		// Apply WHERE clause
 		if len(preload.Where) > 0 {

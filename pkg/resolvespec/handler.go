@@ -199,7 +199,9 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	// Apply column selection
 	if len(options.Columns) > 0 {
 		logger.Debug("Selecting columns: %v", options.Columns)
-		query = query.Column(options.Columns...)
+		for _, col := range options.Columns {
+			query = query.Column(reflection.ExtractSourceColumn(col))
+		}
 	}
 
 	if len(options.ComputedColumns) > 0 {
