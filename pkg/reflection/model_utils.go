@@ -756,7 +756,38 @@ func ConvertToNumericType(value string, kind reflect.Kind) (interface{}, error) 
 // 2. Bun tag name (if exists)
 // 3. Gorm tag name (if exists)
 // 4. JSON tag name (if exists)
+//
+// Supports recursive field paths using dot notation (e.g., "MAL.MAL.DEF")
+// For nested fields, it traverses through each level of the struct hierarchy
 func GetRelationModel(model interface{}, fieldName string) interface{} {
+	if model == nil || fieldName == "" {
+		return nil
+	}
+
+	// Split the field name by "." to handle nested/recursive relations
+	fieldParts := strings.Split(fieldName, ".")
+
+	// Start with the current model
+	currentModel := model
+
+	// Traverse through each level of the field path
+	for _, part := range fieldParts {
+		if part == "" {
+			continue
+		}
+
+		currentModel = getRelationModelSingleLevel(currentModel, part)
+		if currentModel == nil {
+			return nil
+		}
+	}
+
+	return currentModel
+}
+
+// getRelationModelSingleLevel gets the model type for a single level field (non-recursive)
+// This is a helper function used by GetRelationModel to handle one level at a time
+func getRelationModelSingleLevel(model interface{}, fieldName string) interface{} {
 	if model == nil || fieldName == "" {
 		return nil
 	}

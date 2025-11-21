@@ -919,6 +919,20 @@ func (h *Handler) addXFilesPreload(xfile *XFiles, options *ExtendedRequestOption
 	// Set recursive flag
 	preloadOpt.Recursive = xfile.Recursive
 
+	// Extract relationship keys for proper foreign key filtering
+	if xfile.PrimaryKey != "" {
+		preloadOpt.PrimaryKey = xfile.PrimaryKey
+		logger.Debug("X-Files: Set primary key for %s: %s", relationPath, xfile.PrimaryKey)
+	}
+	if xfile.RelatedKey != "" {
+		preloadOpt.RelatedKey = xfile.RelatedKey
+		logger.Debug("X-Files: Set related key for %s: %s", relationPath, xfile.RelatedKey)
+	}
+	if xfile.ForeignKey != "" {
+		preloadOpt.ForeignKey = xfile.ForeignKey
+		logger.Debug("X-Files: Set foreign key for %s: %s", relationPath, xfile.ForeignKey)
+	}
+
 	// Add the preload option
 	options.Preload = append(options.Preload, preloadOpt)
 

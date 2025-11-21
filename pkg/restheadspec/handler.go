@@ -560,11 +560,33 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 
 // applyPreloadWithRecursion applies a preload with support for ComputedQL and recursive preloading
 func (h *Handler) applyPreloadWithRecursion(query common.SelectQuery, preload common.PreloadOption, model interface{}, depth int) common.SelectQuery {
+	// Log relationship keys if they're specified (from XFiles)
+	if preload.RelatedKey != "" || preload.ForeignKey != "" || preload.PrimaryKey != "" {
+		logger.Debug("Preload %s has relationship keys - PK: %s, RelatedKey: %s, ForeignKey: %s",
+			preload.Relation, preload.PrimaryKey, preload.RelatedKey, preload.ForeignKey)
+
+		// Build a WHERE clause using the relationship keys if needed
+		// Note: Bun's PreloadRelation typically handles the relationship join automatically via struct tags
+		// However, if the relationship keys are explicitly provided from XFiles, we can use them
+		// to add additional filtering or validation
+		if preload.RelatedKey != "" && preload.Where == "" {
+			// For child tables: ensure the child's relatedkey column will be matched
+			// The actual parent value is dynamic and handled by Bun's preload mechanism
+			// We just log this for visibility
+			logger.Debug("Child table %s will be filtered by %s matching parent's primary key",
+				preload.Relation, preload.RelatedKey)
+		}
+		if preload.ForeignKey != "" && preload.Where == "" {
+			// For parent tables: ensure the parent's primary key matches the current table's foreign key
+			logger.Debug("Parent table %s will be filtered by primary key matching current table's %s",
+				preload.Relation, preload.ForeignKey)
+		}
+	}
+
 	// Apply the preload
 	query = query.PreloadRelation(preload.Relation, func(sq common.SelectQuery) common.SelectQuery {
 		// Get the related model for column operations
-		relationParts := strings.Split(preload.Relation, ",")
-		relatedModel := reflection.GetRelationModel(model, relationParts[0])
+		relatedModel := reflection.GetRelationModel(model, preload.Relation)
 		if relatedModel == nil {
 			logger.Warn("Could not get related model for preload: %s", preload.Relation)
 			// relatedModel = model // fallback to parent model

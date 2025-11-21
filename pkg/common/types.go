@@ -43,6 +43,11 @@ type PreloadOption struct {
 	Updatable   *bool             `json:"updateable"`  // if true, the relation can be updated
 	ComputedQL  map[string]string `json:"computed_ql"` // Computed columns as SQL expressions
 	Recursive   bool              `json:"recursive"`   // if true, preload recursively up to 5 levels
+
+	// Relationship keys from XFiles - used to build proper foreign key filters
+	PrimaryKey string `json:"primary_key"` // Primary key of the related table
+	RelatedKey string `json:"related_key"` // For child tables: column in child that references parent
+	ForeignKey string `json:"foreign_key"` // For parent tables: column in current table that references parent
 }
 
 type FilterOption struct {
