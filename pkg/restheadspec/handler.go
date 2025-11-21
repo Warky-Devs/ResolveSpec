@@ -392,7 +392,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	if options.CustomSQLWhere != "" {
 		logger.Debug("Applying custom SQL WHERE: %s", options.CustomSQLWhere)
 		// Sanitize without auto-prefixing since custom SQL may reference multiple tables
-		sanitizedWhere := common.SanitizeWhereClause(options.CustomSQLWhere, "")
+		sanitizedWhere := common.SanitizeWhereClause(options.CustomSQLWhere, reflection.ExtractTableNameOnly(tableName))
 		if sanitizedWhere != "" {
 			query = query.Where(sanitizedWhere)
 		}
@@ -402,7 +402,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 	if options.CustomSQLOr != "" {
 		logger.Debug("Applying custom SQL OR: %s", options.CustomSQLOr)
 		// Sanitize without auto-prefixing since custom SQL may reference multiple tables
-		sanitizedOr := common.SanitizeWhereClause(options.CustomSQLOr, "")
+		sanitizedOr := common.SanitizeWhereClause(options.CustomSQLOr, reflection.ExtractTableNameOnly(tableName))
 		if sanitizedOr != "" {
 			query = query.WhereOr(sanitizedOr)
 		}
@@ -481,7 +481,7 @@ func (h *Handler) handleRead(ctx context.Context, w common.ResponseWriter, id st
 		// Apply cursor filter to query
 		if cursorFilter != "" {
 			logger.Debug("Applying cursor filter: %s", cursorFilter)
-			sanitizedCursor := common.SanitizeWhereClause(cursorFilter, "")
+			sanitizedCursor := common.SanitizeWhereClause(cursorFilter, reflection.ExtractTableNameOnly(tableName))
 			if sanitizedCursor != "" {
 				query = query.Where(sanitizedCursor)
 			}
@@ -655,7 +655,7 @@ func (h *Handler) applyPreloadWithRecursion(query common.SelectQuery, preload co
 
 		// Apply WHERE clause
 		if len(preload.Where) > 0 {
-			sanitizedWhere := common.SanitizeWhereClause(preload.Where, preload.Relation)
+			sanitizedWhere := common.SanitizeWhereClause(preload.Where, reflection.ExtractTableNameOnly(preload.Relation))
 			if len(sanitizedWhere) > 0 {
 				sq = sq.Where(sanitizedWhere)
 			}

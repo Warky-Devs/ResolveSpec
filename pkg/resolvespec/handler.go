@@ -1209,7 +1209,7 @@ func (h *Handler) applyPreloads(model interface{}, query common.SelectQuery, pre
 			}
 
 			if len(preload.Where) > 0 {
-				sanitizedWhere := common.SanitizeWhereClause(preload.Where, preload.Relation)
+				sanitizedWhere := common.SanitizeWhereClause(preload.Where, reflection.ExtractTableNameOnly(preload.Relation))
 				if len(sanitizedWhere) > 0 {
 					sq = sq.Where(sanitizedWhere)
 				}
